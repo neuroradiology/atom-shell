@@ -5,31 +5,39 @@
 
 #include "atom/common/api/object_life_monitor.h"
 
-#include "native_mate/compat.h"
+#include "base/bind.h"
+#include "base/message_loop/message_loop.h"
 
 namespace atom {
 
-// static
-void ObjectLifeMonitor::BindTo(v8::Isolate* isolate,
-                               v8::Handle<v8::Object> target,
-                               v8::Handle<v8::Value> destructor) {
-  target->SetHiddenValue(MATE_STRING_NEW(isolate, "destructor"), destructor);
-
-  ObjectLifeMonitor* olm = new ObjectLifeMonitor();
-  olm->handle_.reset(isolate, target);
-  olm->handle_.SetWeak(olm, WeakCallback);
+ObjectLifeMonitor::ObjectLifeMonitor(v8::Isolate* isolate,
+                                     v8::Local<v8::Object> target)
+    : isolate_(isolate),
+      context_(isolate, isolate->GetCurrentContext()),
+      target_(isolate, target),
+      weak_ptr_factory_(this) {
+  target_.SetWeak(this, OnObjectGC, v8::WeakCallbackType::kParameter);
 }
 
-ObjectLifeMonitor::ObjectLifeMonitor() {
+ObjectLifeMonitor::~ObjectLifeMonitor() {
+  if (target_.IsEmpty())
+    return;
+  target_.ClearWeak();
+  target_.Reset();
 }
 
 // static
-void ObjectLifeMonitor::WeakCallback(
-    const v8::WeakCallbackData<v8::Object, ObjectLifeMonitor>& data) {
-  // destructor.call(object, object);
-  v8::Local<v8::Object> obj = data.GetValue();
-  v8::Local<v8::Function>::Cast(obj->GetHiddenValue(
-      MATE_STRING_NEW(data.GetIsolate(), "destructor")))->Call(obj, 0, NULL);
+void ObjectLifeMonitor::OnObjectGC(
+    const v8::WeakCallbackInfo<ObjectLifeMonitor>& data) {
+  ObjectLifeMonitor* self = data.GetParameter();
+  self->target_.Reset();
+  self->RunDestructor();
+  data.SetSecondPassCallback(Free);
+}
+
+// static
+void ObjectLifeMonitor::Free(
+    const v8::WeakCallbackInfo<ObjectLifeMonitor>& data) {
   delete data.GetParameter();
 }
 

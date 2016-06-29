@@ -14,7 +14,6 @@
 #include "printing/pdf_metafile_skia.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
-#include "skia/ext/vector_canvas.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 
@@ -22,14 +21,13 @@ namespace printing {
 
 using blink::WebFrame;
 
-#if 0
 bool PrintWebViewHelper::RenderPreviewPage(
     int page_number,
     const PrintMsg_Print_Params& print_params) {
   PrintMsg_PrintPage_Params page_params;
   page_params.params = print_params;
   page_params.page_number = page_number;
-  scoped_ptr<PdfMetafileSkia> draft_metafile;
+  std::unique_ptr<PdfMetafileSkia> draft_metafile;
   PdfMetafileSkia* initial_render_metafile = print_preview_context_.metafile();
   if (print_preview_context_.IsModifiable() && is_print_ready_metafile_sent_) {
     draft_metafile.reset(new PdfMetafileSkia);
@@ -54,7 +52,6 @@ bool PrintWebViewHelper::RenderPreviewPage(
   }
   return PreviewPageRendered(page_number, draft_metafile.get());
 }
-#endif
 
 bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
                                           int page_count) {
@@ -98,47 +95,24 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
 
   metafile.FinishDocument();
 
-  // Get the size of the resulting metafile.
-  uint32 buf_size = metafile.GetDataSize();
-  DCHECK_GT(buf_size, 0u);
-
   PrintHostMsg_DidPrintPage_Params printed_page_params;
-  printed_page_params.data_size = 0;
+  if (!CopyMetafileDataToSharedMem(
+          metafile, &printed_page_params.metafile_data_handle)) {
+    return false;
+  }
+
+  printed_page_params.content_area = params.params.printable_area;
+  printed_page_params.data_size = metafile.GetDataSize();
   printed_page_params.document_cookie = params.params.document_cookie;
   printed_page_params.page_size = params.params.page_size;
-  printed_page_params.content_area = params.params.printable_area;
-
-  {
-    base::SharedMemory shared_buf;
-    // Allocate a shared memory buffer to hold the generated metafile data.
-    if (!shared_buf.CreateAndMapAnonymous(buf_size)) {
-      NOTREACHED() << "Buffer allocation failed";
-      return false;
-    }
-
-    // Copy the bits into shared memory.
-    if (!metafile.GetData(shared_buf.memory(), buf_size)) {
-      NOTREACHED() << "GetData() failed";
-      shared_buf.Unmap();
-      return false;
-    }
-    shared_buf.GiveToProcess(base::GetCurrentProcessHandle(),
-                             &printed_page_params.metafile_data_handle);
-    shared_buf.Unmap();
-
-    printed_page_params.data_size = buf_size;
-    Send(new PrintHostMsg_DuplicateSection(
-        routing_id(),
-        printed_page_params.metafile_data_handle,
-        &printed_page_params.metafile_data_handle));
-  }
 
   for (size_t i = 0; i < printed_pages.size(); ++i) {
     printed_page_params.page_number = printed_pages[i];
     printed_page_params.page_size = page_size_in_dpi[i];
     printed_page_params.content_area = content_area_in_dpi[i];
     Send(new PrintHostMsg_DidPrintPage(routing_id(), printed_page_params));
-    printed_page_params.metafile_data_handle = INVALID_HANDLE_VALUE;
+    // Send the rest of the pages with an invalid metafile handle.
+    printed_page_params.metafile_data_handle = base::SharedMemoryHandle();
   }
   return true;
 }
@@ -184,18 +158,12 @@ void PrintWebViewHelper::PrintPageInternal(
       frame->getPrintPageShrink(params.page_number);
   float scale_factor = css_scale_factor * webkit_page_shrink_factor;
 
-  SkBaseDevice* device = metafile->StartPageForVectorCanvas(page_size,
-                                                            canvas_area,
-                                                            scale_factor);
-  if (!device)
+  SkCanvas* canvas = metafile->GetVectorCanvasForNewPage(
+      page_size, canvas_area, scale_factor);
+  if (!canvas)
     return;
 
-  // The printPage method take a reference to the canvas we pass down, so it
-  // can't be a stack object.
-  skia::RefPtr<skia::VectorCanvas> canvas =
-      skia::AdoptRef(new skia::VectorCanvas(device));
   MetafileSkiaWrapper::SetMetafileOnCanvas(*canvas, metafile);
-  skia::SetIsDraftMode(*canvas, is_print_ready_metafile_sent_);
 
 #if 0
   if (params.params.display_header_footer) {
@@ -215,7 +183,7 @@ void PrintWebViewHelper::PrintPageInternal(
                                                 canvas_area,
                                                 content_area,
                                                 scale_factor,
-                                                canvas.get());
+                                                canvas);
   DCHECK_GT(webkit_scale_factor, 0.0f);
   // Done printing. Close the device context to retrieve the compiled metafile.
   if (!metafile->FinishPage())
@@ -223,24 +191,25 @@ void PrintWebViewHelper::PrintPageInternal(
 }
 
 bool PrintWebViewHelper::CopyMetafileDataToSharedMem(
-    PdfMetafileSkia* metafile,
+    const PdfMetafileSkia& metafile,
     base::SharedMemoryHandle* shared_mem_handle) {
-  uint32 buf_size = metafile->GetDataSize();
+  uint32_t buf_size = metafile.GetDataSize();
+  if (buf_size == 0)
+    return false;
+
   base::SharedMemory shared_buf;
   // Allocate a shared memory buffer to hold the generated metafile data.
-  if (!shared_buf.CreateAndMapAnonymous(buf_size)) {
-    NOTREACHED() << "Buffer allocation failed";
+  if (!shared_buf.CreateAndMapAnonymous(buf_size))
     return false;
-  }
 
   // Copy the bits into shared memory.
-  if (!metafile->GetData(shared_buf.memory(), buf_size)) {
-    NOTREACHED() << "GetData() failed";
-    shared_buf.Unmap();
+  if (!metafile.GetData(shared_buf.memory(), buf_size))
+    return false;
+
+  if (!shared_buf.GiveToProcess(base::GetCurrentProcessHandle(),
+                                shared_mem_handle)) {
     return false;
   }
-  shared_buf.GiveToProcess(base::GetCurrentProcessHandle(), shared_mem_handle);
-  shared_buf.Unmap();
 
   Send(new PrintHostMsg_DuplicateSection(routing_id(), *shared_mem_handle,
                                          shared_mem_handle));

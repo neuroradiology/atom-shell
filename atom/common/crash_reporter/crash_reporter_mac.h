@@ -6,12 +6,17 @@
 #define ATOM_COMMON_CRASH_REPORTER_CRASH_REPORTER_MAC_H_
 
 #include <string>
+#include <vector>
 
 #include "atom/common/crash_reporter/crash_reporter.h"
 #include "base/compiler_specific.h"
-#import "vendor/breakpad/src/client/mac/Framework/Breakpad.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/strings/string_piece.h"
+#include "vendor/crashpad/client/simple_string_dictionary.h"
 
+namespace base {
 template <typename T> struct DefaultSingletonTraits;
+}
 
 namespace crash_reporter {
 
@@ -19,21 +24,28 @@ class CrashReporterMac : public CrashReporter {
  public:
   static CrashReporterMac* GetInstance();
 
-  virtual void InitBreakpad(const std::string& product_name,
-                            const std::string& version,
-                            const std::string& company_name,
-                            const std::string& submit_url,
-                            bool auto_submit,
-                            bool skip_system_crash_handler) OVERRIDE;
-  virtual void SetUploadParameters() OVERRIDE;
+  void InitBreakpad(const std::string& product_name,
+                    const std::string& version,
+                    const std::string& company_name,
+                    const std::string& submit_url,
+                    bool auto_submit,
+                    bool skip_system_crash_handler) override;
+  void SetUploadParameters() override;
 
  private:
-  friend struct DefaultSingletonTraits<CrashReporterMac>;
+  friend struct base::DefaultSingletonTraits<CrashReporterMac>;
 
   CrashReporterMac();
   virtual ~CrashReporterMac();
 
-  BreakpadRef breakpad_;
+  void SetUploadsEnabled(bool enable_uploads);
+  void SetCrashKeyValue(const base::StringPiece& key,
+                        const base::StringPiece& value);
+
+  std::vector<UploadReportResult> GetUploadedReports(
+      const std::string& path) override;
+
+  std::unique_ptr<crashpad::SimpleStringDictionary> simple_string_dictionary_;
 
   DISALLOW_COPY_AND_ASSIGN(CrashReporterMac);
 };

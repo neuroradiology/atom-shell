@@ -10,13 +10,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
-#include "net/socket/stream_listen_socket.h"
+#include "net/test/embedded_test_server/stream_listen_socket.h"
 #include "v8/include/v8-debug.h"
+#include "vendor/node/deps/uv/include/uv.h"
 
 namespace atom {
 
 // Add support for node's "--debug" switch.
-class NodeDebugger : public net::StreamListenSocket::Delegate {
+class NodeDebugger : public net::test_server::StreamListenSocket::Delegate {
  public:
   explicit NodeDebugger(v8::Isolate* isolate);
   virtual ~NodeDebugger();
@@ -30,21 +31,26 @@ class NodeDebugger : public net::StreamListenSocket::Delegate {
   void SendMessage(const std::string& message);
   void SendConnectMessage();
 
+  static void ProcessMessageInUI(uv_async_t* handle);
+
   static void DebugMessageHandler(const v8::Debug::Message& message);
 
-  // net::StreamListenSocket::Delegate:
-  virtual void DidAccept(net::StreamListenSocket* server,
-                         scoped_ptr<net::StreamListenSocket> socket) OVERRIDE;
-  virtual void DidRead(net::StreamListenSocket* socket,
-                       const char* data,
-                       int len) OVERRIDE;
-  virtual void DidClose(net::StreamListenSocket* socket) OVERRIDE;
+  // net::test_server::StreamListenSocket::Delegate:
+  void DidAccept(
+      net::test_server::StreamListenSocket* server,
+      std::unique_ptr<net::test_server::StreamListenSocket> socket) override;
+  void DidRead(net::test_server::StreamListenSocket* socket,
+               const char* data,
+               int len) override;
+  void DidClose(net::test_server::StreamListenSocket* socket) override;
 
   v8::Isolate* isolate_;
 
+  uv_async_t weak_up_ui_handle_;
+
   base::Thread thread_;
-  scoped_ptr<net::StreamListenSocket> server_;
-  scoped_ptr<net::StreamListenSocket> accepted_socket_;
+  std::unique_ptr<net::test_server::StreamListenSocket> server_;
+  std::unique_ptr<net::test_server::StreamListenSocket> accepted_socket_;
 
   std::string buffer_;
   int content_length_;

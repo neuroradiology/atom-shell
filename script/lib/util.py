@@ -3,7 +3,10 @@
 import atexit
 import contextlib
 import errno
+import platform
+import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -13,6 +16,30 @@ import os
 import zipfile
 
 from config import is_verbose_mode
+from env_util import get_vs_env
+
+
+def get_host_arch():
+  """Returns the host architecture with a predictable string."""
+  host_arch = platform.machine()
+
+  # Convert machine type to format recognized by gyp.
+  if re.match(r'i.86', host_arch) or host_arch == 'i86pc':
+    host_arch = 'ia32'
+  elif host_arch in ['x86_64', 'amd64']:
+    host_arch = 'x64'
+  elif host_arch.startswith('arm'):
+    host_arch = 'arm'
+
+  # platform.machine is based on running kernel. It's possible to use 64-bit
+  # kernel with 32-bit userland, e.g. to give linker slightly more memory.
+  # Distinguish between different userland bitness by querying
+  # the python binary.
+  if host_arch == 'x64' and platform.architecture()[0] == '32bit':
+    host_arch = 'ia32'
+
+  return host_arch
+
 
 def tempdir(prefix=''):
   directory = tempfile.mkdtemp(prefix=prefix)
@@ -45,6 +72,9 @@ def scoped_env(key, value):
 def download(text, url, path):
   safe_mkdir(os.path.dirname(path))
   with open(path, 'wb') as local_file:
+    if hasattr(ssl, '_create_unverified_context'):
+      ssl._create_default_https_context = ssl._create_unverified_context
+
     web_file = urllib2.urlopen(url)
     file_size = int(web_file.info().getheaders("Content-Length")[0])
     downloaded_size = 0
@@ -104,9 +134,8 @@ def make_zip(zip_file_path, files, dirs):
 def rm_rf(path):
   try:
     shutil.rmtree(path)
-  except OSError as e:
-    if e.errno != errno.ENOENT:
-      raise
+  except OSError:
+    pass
 
 
 def safe_unlink(path):
@@ -125,11 +154,11 @@ def safe_mkdir(path):
       raise
 
 
-def execute(argv):
+def execute(argv, env=os.environ):
   if is_verbose_mode():
     print ' '.join(argv)
   try:
-    output = subprocess.check_output(argv, stderr=subprocess.STDOUT)
+    output = subprocess.check_output(argv, stderr=subprocess.STDOUT, env=env)
     if is_verbose_mode():
       print output
     return output
@@ -138,27 +167,28 @@ def execute(argv):
     raise e
 
 
-def execute_stdout(argv):
+def execute_stdout(argv, env=os.environ):
   if is_verbose_mode():
     print ' '.join(argv)
     try:
-      subprocess.check_call(argv)
+      subprocess.check_call(argv, env=env)
     except subprocess.CalledProcessError as e:
       print e.output
       raise e
   else:
-    execute(argv)
+    execute(argv, env)
 
 
-def get_atom_shell_version():
-  return subprocess.check_output(['git', 'describe', '--tags']).strip()
-
-
-def get_chromedriver_version():
+def electron_gyp():
   SOURCE_ROOT = os.path.abspath(os.path.join(__file__, '..', '..', '..'))
-  chromedriver = os.path.join(SOURCE_ROOT, 'out', 'Release', 'chromedriver')
-  output = subprocess.check_output([chromedriver, '-v']).strip()
-  return 'v' + output[13:]
+  gyp = os.path.join(SOURCE_ROOT, 'electron.gyp')
+  with open(gyp) as f:
+    obj = eval(f.read());
+    return obj['variables']
+
+
+def get_electron_version():
+  return 'v' + electron_gyp()['version%']
 
 
 def parse_version(version):
@@ -172,20 +202,19 @@ def parse_version(version):
     return vs + ['0'] * (4 - len(vs))
 
 
-def s3_config():
-  config = (os.environ.get('ATOM_SHELL_S3_BUCKET', ''),
-            os.environ.get('ATOM_SHELL_S3_ACCESS_KEY', ''),
-            os.environ.get('ATOM_SHELL_S3_SECRET_KEY', ''))
-  message = ('Error: Please set the $ATOM_SHELL_S3_BUCKET, '
-             '$ATOM_SHELL_S3_ACCESS_KEY, and '
-             '$ATOM_SHELL_S3_SECRET_KEY environment variables')
-  assert all(len(c) for c in config), message
-  return config
-
-
 def s3put(bucket, access_key, secret_key, prefix, key_prefix, files):
+  env = os.environ.copy()
+  BOTO_DIR = os.path.abspath(os.path.join(__file__, '..', '..', '..', 'vendor',
+                                          'boto'))
+  env['PYTHONPATH'] = os.path.pathsep.join([
+    env.get('PYTHONPATH', ''),
+    os.path.join(BOTO_DIR, 'build', 'lib'),
+    os.path.join(BOTO_DIR, 'build', 'lib.linux-x86_64-2.7')])
+
+  boto = os.path.join(BOTO_DIR, 'bin', 's3put')
   args = [
-    's3put',
+    sys.executable,
+    boto,
     '--bucket', bucket,
     '--access_key', access_key,
     '--secret_key', secret_key,
@@ -194,4 +223,16 @@ def s3put(bucket, access_key, secret_key, prefix, key_prefix, files):
     '--grant', 'public-read'
   ] + files
 
-  execute(args)
+  execute(args, env)
+
+
+def import_vs_env(target_arch):
+  if sys.platform != 'win32':
+    return
+
+  if target_arch == 'ia32':
+    vs_arch = 'amd64_x86'
+  else:
+    vs_arch = 'x86_amd64'
+  env = get_vs_env('14.0', vs_arch)
+  os.environ.update(env)

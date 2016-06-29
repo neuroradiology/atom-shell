@@ -7,7 +7,7 @@
   <key>CFBundleExecutable</key>
   <string>${PRODUCT_NAME}</string>
   <key>CFBundleIdentifier</key>
-  <string>com.github.atom-shell</string>
+  <string>${ATOM_BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -15,16 +15,22 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>
-  <string>atom.icns</string>
+  <string>electron.icns</string>
   <key>CFBundleVersion</key>
-  <string>0.20.2</string>
+  <string>1.2.5</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.2.5</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.developer-tools</string>
   <key>LSMinimumSystemVersion</key>
-  <string>10.8.0</string>
+  <string>10.9.0</string>
   <key>NSMainNibFile</key>
   <string>MainMenu</string>
   <key>NSPrincipalClass</key>
   <string>AtomApplication</string>
   <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+  <key>NSHighResolutionCapable</key>
   <true/>
 </dict>
 </plist>

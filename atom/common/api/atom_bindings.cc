@@ -6,12 +6,13 @@
 
 #include <algorithm>
 #include <string>
+#include <iostream>
 
 #include "atom/common/atom_version.h"
 #include "atom/common/chrome_version.h"
 #include "atom/common/native_mate_converters/string16_converter.h"
 #include "base/logging.h"
-#include "native_mate/callback.h"
+#include "base/process/process_metrics.h"
 #include "native_mate/dictionary.h"
 
 #include "atom/common/node_includes.h"
@@ -20,22 +21,56 @@ namespace atom {
 
 namespace {
 
-// Async handle to execute the stored v8 callback.
-uv_async_t g_callback_uv_handle;
-
-// Stored v8 callback, to be called by the async handler.
-base::Closure g_v8_callback;
-
 // Dummy class type that used for crashing the program.
 struct DummyClass { bool crash; };
 
-// Async handler to execute the stored v8 callback.
-void UvOnCallback(uv_async_t* handle) {
-  g_v8_callback.Run();
-}
-
 void Crash() {
   static_cast<DummyClass*>(NULL)->crash = true;
+}
+
+void Hang() {
+  for (;;)
+    base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(1));
+}
+
+v8::Local<v8::Value> GetProcessMemoryInfo(v8::Isolate* isolate) {
+  std::unique_ptr<base::ProcessMetrics> metrics(
+      base::ProcessMetrics::CreateCurrentProcessMetrics());
+
+  mate::Dictionary dict = mate::Dictionary::CreateEmpty(isolate);
+  dict.Set("workingSetSize",
+           static_cast<double>(metrics->GetWorkingSetSize() >> 10));
+  dict.Set("peakWorkingSetSize",
+           static_cast<double>(metrics->GetPeakWorkingSetSize() >> 10));
+
+  size_t private_bytes, shared_bytes;
+  if (metrics->GetMemoryBytes(&private_bytes, &shared_bytes)) {
+    dict.Set("privateBytes", static_cast<double>(private_bytes >> 10));
+    dict.Set("sharedBytes", static_cast<double>(shared_bytes >> 10));
+  }
+
+  return dict.GetHandle();
+}
+
+v8::Local<v8::Value> GetSystemMemoryInfo(v8::Isolate* isolate,
+                                         mate::Arguments* args) {
+  base::SystemMemoryInfoKB mem_info;
+  if (!base::GetSystemMemoryInfo(&mem_info)) {
+    args->ThrowError("Unable to retrieve system memory information");
+    return v8::Undefined(isolate);
+  }
+
+  mate::Dictionary dict = mate::Dictionary::CreateEmpty(isolate);
+  dict.Set("total", mem_info.total);
+  dict.Set("free", mem_info.free);
+
+  // NB: These return bogus values on macOS
+#if !defined(OS_MACOSX)
+  dict.Set("swapTotal", mem_info.swap_total);
+  dict.Set("swapFree", mem_info.swap_free);
+#endif
+
+  return dict.GetHandle();
 }
 
 // Called when there is a fatal error in V8, we just crash the process here so
@@ -46,12 +81,7 @@ void FatalErrorCallback(const char* location, const char* message) {
 }
 
 void Log(const base::string16& message) {
-  logging::LogMessage("CONSOLE", 0, 0).stream() << message;
-}
-
-void ScheduleCallback(const base::Closure& callback) {
-  g_v8_callback = callback;
-  uv_async_send(&g_callback_uv_handle);
+  std::cout << message << std::flush;
 }
 
 }  // namespace
@@ -60,34 +90,37 @@ void ScheduleCallback(const base::Closure& callback) {
 AtomBindings::AtomBindings() {
   uv_async_init(uv_default_loop(), &call_next_tick_async_, OnCallNextTick);
   call_next_tick_async_.data = this;
-
-  uv_async_init(uv_default_loop(), &g_callback_uv_handle, UvOnCallback);
 }
 
 AtomBindings::~AtomBindings() {
 }
 
 void AtomBindings::BindTo(v8::Isolate* isolate,
-                          v8::Handle<v8::Object> process) {
+                          v8::Local<v8::Object> process) {
   v8::V8::SetFatalErrorHandler(FatalErrorCallback);
 
   mate::Dictionary dict(isolate, process);
   dict.SetMethod("crash", &Crash);
+  dict.SetMethod("hang", &Hang);
   dict.SetMethod("log", &Log);
-  dict.SetMethod("scheduleCallback", &ScheduleCallback);
+  dict.SetMethod("getProcessMemoryInfo", &GetProcessMemoryInfo);
+  dict.SetMethod("getSystemMemoryInfo", &GetSystemMemoryInfo);
+#if defined(OS_POSIX)
+  dict.SetMethod("setFdLimit", &base::SetFdLimit);
+#endif
   dict.SetMethod("activateUvLoop",
       base::Bind(&AtomBindings::ActivateUVLoop, base::Unretained(this)));
 
-  v8::Handle<v8::Object> versions;
-  if (dict.Get("versions", &versions)) {
-    versions->Set(mate::StringToV8(isolate, "atom-shell"),
-                  mate::StringToV8(isolate, ATOM_VERSION_STRING));
-    versions->Set(mate::StringToV8(isolate, "chrome"),
-                  mate::StringToV8(isolate, CHROME_VERSION_STRING));
-  }
+#if defined(MAS_BUILD)
+  dict.Set("mas", true);
+#endif
 
-  v8::Handle<v8::Value> event = mate::StringToV8(isolate, "BIND_DONE");
-  node::MakeCallback(isolate, process, "emit", 1, &event);
+  mate::Dictionary versions;
+  if (dict.Get("versions", &versions)) {
+    versions.Set(ATOM_PROJECT_NAME, ATOM_VERSION_STRING);
+    versions.Set("atom-shell", ATOM_VERSION_STRING);  // For compatibility.
+    versions.Set("chrome", CHROME_VERSION_STRING);
+  }
 }
 
 void AtomBindings::ActivateUVLoop(v8::Isolate* isolate) {
@@ -107,20 +140,17 @@ void AtomBindings::OnCallNextTick(uv_async_t* handle) {
            self->pending_next_ticks_.begin();
        it != self->pending_next_ticks_.end(); ++it) {
     node::Environment* env = *it;
+    // KickNextTick, copied from node.cc:
+    node::Environment::AsyncCallbackScope callback_scope(env);
+    if (callback_scope.in_makecallback())
+      continue;
     node::Environment::TickInfo* tick_info = env->tick_info();
-
-    v8::Context::Scope context_scope(env->context());
-    if (tick_info->in_tick())
-      continue;
-
-    if (tick_info->length() == 0) {
+    if (tick_info->length() == 0)
+      env->isolate()->RunMicrotasks();
+    v8::Local<v8::Object> process = env->process_object();
+    if (tick_info->length() == 0)
       tick_info->set_index(0);
-      continue;
-    }
-
-    tick_info->set_in_tick(true);
-    env->tick_callback_function()->Call(env->process_object(), 0, NULL);
-    tick_info->set_in_tick(false);
+    env->tick_callback_function()->Call(process, 0, nullptr).IsEmpty();
   }
 
   self->pending_next_ticks_.clear();

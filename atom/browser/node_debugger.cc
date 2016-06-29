@@ -12,7 +12,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/socket/tcp_listen_socket.h"
+#include "net/test/embedded_test_server/tcp_listen_socket.h"
 
 #include "atom/common/node_includes.h"
 
@@ -35,17 +35,14 @@ NodeDebugger::NodeDebugger(v8::Isolate* isolate)
       weak_factory_(this) {
   bool use_debug_agent = false;
   int port = 5858;
-  bool wait_for_connection = false;
 
   std::string port_str;
   base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
   if (cmd->HasSwitch("debug")) {
     use_debug_agent = true;
     port_str = cmd->GetSwitchValueASCII("debug");
-  }
-  if (cmd->HasSwitch("debug-brk")) {
+  } else if (cmd->HasSwitch("debug-brk")) {
     use_debug_agent = true;
-    wait_for_connection = true;
     port_str = cmd->GetSwitchValueASCII("debug-brk");
   }
 
@@ -56,8 +53,7 @@ NodeDebugger::NodeDebugger(v8::Isolate* isolate)
     isolate_->SetData(kIsolateSlot, this);
     v8::Debug::SetMessageHandler(DebugMessageHandler);
 
-    if (wait_for_connection)
-      v8::Debug::DebugBreak(isolate_);
+    uv_async_init(uv_default_loop(), &weak_up_ui_handle_, ProcessMessageInUI);
 
     // Start a new IO thread.
     base::Thread::Options options;
@@ -84,7 +80,8 @@ bool NodeDebugger::IsRunning() const {
 }
 
 void NodeDebugger::StartServer(int port) {
-  server_ = net::TCPListenSocket::CreateAndListen("127.0.0.1", port, this);
+  server_ = net::test_server::TCPListenSocket::CreateAndListen(
+      "127.0.0.1", port, this);
   if (!server_) {
     LOG(ERROR) << "Cannot start debugger server";
     return;
@@ -105,9 +102,7 @@ void NodeDebugger::OnMessage(const std::string& message) {
       isolate_,
       reinterpret_cast<const uint16_t*>(message16.data()), message16.size());
 
-  content::BrowserThread::PostTask(
-      content::BrowserThread::UI, FROM_HERE,
-      base::Bind(&v8::Debug::ProcessDebugMessages));
+  uv_async_send(&weak_up_ui_handle_);
 }
 
 void NodeDebugger::SendMessage(const std::string& message) {
@@ -126,7 +121,12 @@ void NodeDebugger::SendConnectMessage() {
       "Protocol-Version: 1\r\n"
       "Embedding-Host: %s\r\n"
       "%s: 0\r\n",
-      v8::V8::GetVersion(), "Atom-Shell", kContentLength), true);
+      v8::V8::GetVersion(), ATOM_PRODUCT_NAME, kContentLength), true);
+}
+
+// static
+void NodeDebugger::ProcessMessageInUI(uv_async_t* handle) {
+  v8::Debug::ProcessDebugMessages();
 }
 
 // static
@@ -143,19 +143,20 @@ void NodeDebugger::DebugMessageHandler(const v8::Debug::Message& message) {
   }
 }
 
-void NodeDebugger::DidAccept(net::StreamListenSocket* server,
-                             scoped_ptr<net::StreamListenSocket> socket) {
+void NodeDebugger::DidAccept(
+    net::test_server::StreamListenSocket* server,
+    std::unique_ptr<net::test_server::StreamListenSocket> socket) {
   // Only accept one session.
   if (accepted_socket_) {
     socket->Send(std::string("Remote debugging session already active"), true);
     return;
   }
 
-  accepted_socket_ = socket.Pass();
+  accepted_socket_ = std::move(socket);
   SendConnectMessage();
 }
 
-void NodeDebugger::DidRead(net::StreamListenSocket* socket,
+void NodeDebugger::DidRead(net::test_server::StreamListenSocket* socket,
                            const char* data,
                            int len) {
   buffer_.append(data, len);
@@ -194,7 +195,7 @@ void NodeDebugger::DidRead(net::StreamListenSocket* socket,
   } while (true);
 }
 
-void NodeDebugger::DidClose(net::StreamListenSocket* socket) {
+void NodeDebugger::DidClose(net::test_server::StreamListenSocket* socket) {
   // If we lost the connection, then simulate a disconnect msg:
   OnMessage("{\"seq\":1,\"type\":\"request\",\"command\":\"disconnect\"}");
 }

@@ -11,9 +11,10 @@
 #include <map>
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "base/win/windows_version.h"
 #include "vendor/breakpad/src/client/windows/crash_generation/client_info.h"
@@ -23,6 +24,9 @@
 namespace breakpad {
 
 namespace {
+
+const wchar_t kWaitEventFormat[] = L"$1CrashServiceWaitEvent";
+const wchar_t kClassNameFormat[] = L"$1CrashServiceWindow";
 
 const wchar_t kTestPipeName[] = L"\\\\.\\pipe\\ChromeCrashServices";
 
@@ -82,7 +86,7 @@ bool WriteReportIDToFile(const std::wstring& dump_path,
   if (!file.is_open())
     return false;
 
-  int64 seconds_since_epoch =
+  int64_t seconds_since_epoch =
       (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
   std::wstring line = base::Int64ToString16(seconds_since_epoch);
   line += L',';
@@ -111,13 +115,18 @@ LRESULT __stdcall CrashSvcWndProc(HWND hwnd, UINT message,
 // This is the main and only application window.
 HWND g_top_window = NULL;
 
-bool CreateTopWindow(HINSTANCE instance, bool visible) {
+bool CreateTopWindow(HINSTANCE instance,
+                     const base::string16& application_name,
+                     bool visible) {
+  base::string16 class_name = base::ReplaceStringPlaceholders(
+      kClassNameFormat, application_name, NULL);
+
   WNDCLASSEXW wcx = {0};
   wcx.cbSize = sizeof(wcx);
   wcx.style = CS_HREDRAW | CS_VREDRAW;
   wcx.lpfnWndProc = CrashSvcWndProc;
   wcx.hInstance = instance;
-  wcx.lpszClassName = L"crash_svc_class";
+  wcx.lpszClassName = class_name.c_str();
   ATOM atom = ::RegisterClassExW(&wcx);
   DWORD style = visible ? WS_POPUPWINDOW | WS_VISIBLE : WS_OVERLAPPED;
 
@@ -193,7 +202,8 @@ CrashService::~CrashService() {
   delete sender_;
 }
 
-bool CrashService::Initialize(const base::FilePath& operating_dir,
+bool CrashService::Initialize(const base::string16& application_name,
+                              const base::FilePath& operating_dir,
                               const base::FilePath& dumps_path) {
   using google_breakpad::CrashReportSender;
   using google_breakpad::CrashGenerationServer;
@@ -201,11 +211,11 @@ bool CrashService::Initialize(const base::FilePath& operating_dir,
   std::wstring pipe_name = kTestPipeName;
   int max_reports = -1;
 
-  // The checkpoint file allows CrashReportSender to enforce the the maximum
+  // The checkpoint file allows CrashReportSender to enforce the maximum
   // reports per day quota. Does not seem to serve any other purpose.
   base::FilePath checkpoint_path = operating_dir.Append(kCheckPointFile);
 
-  CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
 
   base::FilePath dumps_path_to_use = dumps_path;
 
@@ -260,6 +270,7 @@ bool CrashService::Initialize(const base::FilePath& operating_dir,
   }
 
   if (!CreateTopWindow(::GetModuleHandleW(NULL),
+                       application_name,
                        !cmd_line.HasSwitch(kNoWindow))) {
     LOG(ERROR) << "could not create window";
     if (security_attributes.lpSecurityDescriptor)
@@ -298,11 +309,10 @@ bool CrashService::Initialize(const base::FilePath& operating_dir,
 
   // Create or open an event to signal the browser process that the crash
   // service is initialized.
-  HANDLE running_event =
-      ::CreateEventW(NULL, TRUE, TRUE, L"g_atom_shell_crash_service");
-  // If the browser already had the event open, the CreateEvent call did not
-  // signal it. We need to do it manually.
-  ::SetEvent(running_event);
+  base::string16 wait_name = base::ReplaceStringPlaceholders(
+      kWaitEventFormat, application_name, NULL);
+  HANDLE wait_event = ::CreateEventW(NULL, TRUE, TRUE, wait_name.c_str());
+  ::SetEvent(wait_event);
 
   return true;
 }
@@ -317,7 +327,7 @@ void CrashService::OnClientConnected(void* context,
 
 void CrashService::OnClientExited(void* context,
     const google_breakpad::ClientInfo* client_info) {
-  ProcessingLock lock;
+  ProcessingLock processing_lock;
   VLOG(1) << "client end. pid = " << client_info->pid();
   CrashService* self = static_cast<CrashService*>(context);
   ::InterlockedIncrement(&self->clients_terminated_);
@@ -430,10 +440,12 @@ DWORD CrashService::AsyncSendDump(void* context) {
       // termination of the service object.
       base::AutoLock lock(info->self->sending_);
       VLOG(1) << "trying to send report for pid = " << info->pid;
+      std::map<std::wstring, std::wstring> file_map;
+      file_map[L"upload_file_minidump"] = info->dump_path;
       google_breakpad::ReportResult send_result
           = info->self->sender_->SendCrashReport(info->self->reporter_url_,
                                                  info->map,
-                                                 info->dump_path,
+                                                 file_map,
                                                  &report_id);
       switch (send_result) {
         case google_breakpad::RESULT_FAILED:
@@ -514,4 +526,3 @@ PSECURITY_DESCRIPTOR CrashService::GetSecurityDescriptorForLowIntegrity() {
 }
 
 }  // namespace breakpad
-

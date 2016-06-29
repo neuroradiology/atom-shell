@@ -6,14 +6,16 @@
 
 #include <stdio.h>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "url/gurl.h"
 
 namespace {
 
-void XDGUtil(const std::string& util, const std::string& arg) {
+bool XDGUtil(const std::string& util,
+             const std::string& arg,
+             const bool wait_for_exit) {
   std::vector<std::string> argv;
   argv.push_back(util);
   argv.push_back(arg);
@@ -26,17 +28,28 @@ void XDGUtil(const std::string& util, const std::string& arg) {
   // bring up a new terminal if necessary.  See "man mailcap".
   options.environ["MM_NOTTTY"] = "1";
 
-  base::ProcessHandle handle;
-  if (base::LaunchProcess(argv, options, &handle))
-    base::EnsureProcessGetsReaped(handle);
+  base::Process process = base::LaunchProcess(argv, options);
+  if (!process.IsValid())
+    return false;
+
+  if (!wait_for_exit) {
+    base::EnsureProcessGetsReaped(process.Pid());
+    return true;
+  }
+
+  int exit_code = -1;
+  if (!process.WaitForExit(&exit_code))
+    return false;
+
+  return (exit_code == 0);
 }
 
-void XDGOpen(const std::string& path) {
-  XDGUtil("xdg-open", path);
+bool XDGOpen(const std::string& path, const bool wait_for_exit) {
+  return XDGUtil("xdg-open", path, wait_for_exit);
 }
 
-void XDGEmail(const std::string& email) {
-  XDGUtil("xdg-email", email);
+bool XDGEmail(const std::string& email, const bool wait_for_exit) {
+  return XDGUtil("xdg-email", email, wait_for_exit);
 }
 
 }  // namespace
@@ -51,22 +64,24 @@ void ShowItemInFolder(const base::FilePath& full_path) {
   if (!base::DirectoryExists(dir))
     return;
 
-  XDGOpen(dir.value());
+  XDGOpen(dir.value(), true);
 }
 
 void OpenItem(const base::FilePath& full_path) {
-  XDGOpen(full_path.value());
+  XDGOpen(full_path.value(), true);
 }
 
-void OpenExternal(const GURL& url) {
+bool OpenExternal(const GURL& url, bool activate) {
+  // Don't wait for exit, since we don't want to wait for the browser/email
+  // client window to close before returning
   if (url.SchemeIs("mailto"))
-    XDGEmail(url.spec());
+    return XDGEmail(url.spec(), false);
   else
-    XDGOpen(url.spec());
+    return XDGOpen(url.spec(), false);
 }
 
-void MoveItemToTrash(const base::FilePath& full_path) {
-  XDGUtil("gvfs-trash", full_path.value());
+bool MoveItemToTrash(const base::FilePath& full_path) {
+  return XDGUtil("gvfs-trash", full_path.value(), true);
 }
 
 void Beep() {

@@ -9,29 +9,23 @@
 #include <vector>
 
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/public/renderer/render_process_observer.h"
-
-namespace node {
-class Environment;
-}
 
 namespace atom {
 
-class AtomRendererBindings;
+class AtomBindings;
+class PreferencesManager;
 class NodeBindings;
 
-class AtomRendererClient : public content::ContentRendererClient,
-                           public content::RenderProcessObserver {
+class AtomRendererClient : public content::ContentRendererClient {
  public:
   AtomRendererClient();
   virtual ~AtomRendererClient();
 
-  // Forwarded by RenderFrameObserver.
-  void WillReleaseScriptContext(blink::WebLocalFrame* frame,
-                                v8::Handle<v8::Context> context,
-                                int world_id);
-
-  AtomRendererBindings* atom_bindings() const { return atom_bindings_.get(); }
+  void DidClearWindowObject(content::RenderFrame* render_frame);
+  void DidCreateScriptContext(
+      v8::Handle<v8::Context> context, content::RenderFrame* render_frame);
+  void WillReleaseScriptContext(
+      v8::Handle<v8::Context> context, content::RenderFrame* render_frame);
 
  private:
   enum NodeIntegration {
@@ -41,39 +35,38 @@ class AtomRendererClient : public content::ContentRendererClient,
     DISABLE,
   };
 
-  // content::RenderProcessObserver:
-  virtual void WebKitInitialized() OVERRIDE;
-
   // content::ContentRendererClient:
   void RenderThreadStarted() override;
-  void RenderFrameCreated(content::RenderFrame* render_frame) override;
+  void RenderFrameCreated(content::RenderFrame*) override;
   void RenderViewCreated(content::RenderView*) override;
+  void RunScriptsAtDocumentStart(content::RenderFrame* render_frame) override;
+  void RunScriptsAtDocumentEnd(content::RenderFrame* render_frame) override;
   blink::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
       blink::WebSpeechSynthesizerClient* client) override;
   bool OverrideCreatePlugin(content::RenderFrame* render_frame,
                             blink::WebLocalFrame* frame,
                             const blink::WebPluginParams& params,
                             blink::WebPlugin** plugin) override;
-  void DidCreateScriptContext(blink::WebFrame* frame,
-                              v8::Handle<v8::Context> context,
-                              int extension_group,
-                              int world_id) override;
-  bool ShouldFork(blink::WebFrame* frame,
+  bool ShouldFork(blink::WebLocalFrame* frame,
                   const GURL& url,
                   const std::string& http_method,
                   bool is_initial_navigation,
                   bool is_server_redirect,
                   bool* send_referrer) override;
+  content::BrowserPluginDelegate* CreateBrowserPluginDelegate(
+      content::RenderFrame* render_frame,
+      const std::string& mime_type,
+      const GURL& original_url) override;
+  void AddKeySystems(std::vector<media::KeySystemInfo>* key_systems) override;
+  void GetNavigationErrorStrings(content::RenderFrame* render_frame,
+                                 const blink::WebURLRequest& failed_request,
+                                 const blink::WebURLError& error,
+                                 std::string* error_html,
+                                 base::string16* error_description) override;
 
-  void EnableWebRuntimeFeatures();
-
-  std::vector<node::Environment*> web_page_envs_;
-
-  scoped_ptr<NodeBindings> node_bindings_;
-  scoped_ptr<AtomRendererBindings> atom_bindings_;
-
-  // The main frame.
-  blink::WebFrame* main_frame_;
+  std::unique_ptr<NodeBindings> node_bindings_;
+  std::unique_ptr<AtomBindings> atom_bindings_;
+  std::unique_ptr<PreferencesManager> preferences_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(AtomRendererClient);
 };

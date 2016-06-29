@@ -5,10 +5,11 @@ import hashlib
 import os
 import tempfile
 
-from lib.util import download, rm_rf, s3_config, s3put
+from lib.config import s3_config
+from lib.util import download, rm_rf, s3put
 
 
-DIST_URL = 'https://gh-contractor-zcbenz.s3.amazonaws.com/atom-shell/dist/'
+DIST_URL = 'https://atom.io/download/atom-shell/'
 
 
 def main():
@@ -38,13 +39,17 @@ def parse_args():
 def get_files_list(version):
   return [
     'node-{0}.tar.gz'.format(version),
+    'iojs-{0}.tar.gz'.format(version),
+    'iojs-{0}-headers.tar.gz'.format(version),
     'node.lib',
     'x64/node.lib',
+    'win-x86/iojs.lib',
+    'win-x64/iojs.lib',
   ]
 
 
 def download_files(url, files):
-  directory = tempfile.mkdtemp(prefix='atom-shell-tmp')
+  directory = tempfile.mkdtemp(prefix='electron-tmp')
   return directory, [
     download(f, url + f, os.path.join(directory, f))
     for f in files

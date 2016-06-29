@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_PRINTING_PRINT_JOB_H_
 #define CHROME_BROWSER_PRINTING_PRINT_JOB_H_
 
-#include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -51,14 +50,14 @@ class PrintJob : public PrintJobWorkerOwner,
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+                       const content::NotificationDetails& details) override;
 
   // PrintJobWorkerOwner implementation.
   virtual void GetSettingsDone(const PrintSettings& new_settings,
-                               PrintingContext::Result result) OVERRIDE;
-  virtual PrintJobWorker* DetachWorker(PrintJobWorkerOwner* new_owner) OVERRIDE;
-  virtual const PrintSettings& settings() const OVERRIDE;
-  virtual int cookie() const OVERRIDE;
+                               PrintingContext::Result result) override;
+  virtual PrintJobWorker* DetachWorker(PrintJobWorkerOwner* new_owner) override;
+  virtual const PrintSettings& settings() const override;
+  virtual int cookie() const override;
 
   // Starts the actual printing. Signals the worker that it should begin to
   // spool as soon as data is available.
@@ -89,6 +88,19 @@ class PrintJob : public PrintJobWorkerOwner,
 
   // Access the current printed document. Warning: may be NULL.
   PrintedDocument* document() const;
+
+#if defined(OS_WIN)
+  void StartPdfToEmfConversion(
+      const scoped_refptr<base::RefCountedMemory>& bytes,
+      const gfx::Size& page_size,
+      const gfx::Rect& content_area);
+
+  void OnPdfToEmfStarted(int page_count);
+  void OnPdfToEmfPageConverted(int page_number,
+                               float scale_factor,
+                               std::unique_ptr<MetafilePlayer> emf);
+
+#endif  // OS_WIN
 
  protected:
   virtual ~PrintJob();
@@ -122,7 +134,7 @@ class PrintJob : public PrintJobWorkerOwner,
   // All the UI is done in a worker thread because many Win32 print functions
   // are blocking and enters a message loop without your consent. There is one
   // worker thread per print job.
-  scoped_ptr<PrintJobWorker> worker_;
+  std::unique_ptr<PrintJobWorker> worker_;
 
   // Cache of the print context settings for access in the UI thread.
   PrintSettings settings_;
@@ -136,6 +148,11 @@ class PrintJob : public PrintJobWorkerOwner,
   // Is Canceling? If so, try to not cause recursion if on FAILED notification,
   // the notified calls Cancel() again.
   bool is_canceling_;
+
+#if defined(OS_WIN)
+  class PdfToEmfState;
+  std::unique_ptr<PdfToEmfState> ptd_to_emf_state_;
+#endif  // OS_WIN
 
   // Used at shutdown so that we can quit a nested message loop.
   base::WeakPtrFactory<PrintJob> quit_factory_;

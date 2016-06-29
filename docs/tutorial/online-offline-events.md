@@ -6,55 +6,60 @@ using standard HTML5 APIs, as shown in the following example.
 _main.js_
 
 ```javascript
-var app = require('app');
-var BrowserWindow = require('browser-window');
-var onlineStatusWindow;
+const electron = require('electron');
+const app = electron.app;
+const BrowserWindow = electron.BrowserWindow;
 
-app.on('ready', function() {
+let onlineStatusWindow;
+
+app.on('ready', () => {
   onlineStatusWindow = new BrowserWindow({ width: 0, height: 0, show: false });
-  onlineStatusWindow.loadUrl('file://' + __dirname + '/online-status.html');
+  onlineStatusWindow.loadURL(`file://${__dirname}/online-status.html`);
 });
 ```
 
 _online-status.html_
 
 ```html
+<!DOCTYPE html>
 <html>
-  <body>
-    <script>
-      var alertOnlineStatus = function() {
-        window.alert(navigator.onLine ? 'online' : 'offline');
-      };
+<body>
+<script>
+  const alertOnlineStatus = () => {
+    window.alert(navigator.onLine ? 'online' : 'offline');
+  };
 
-      window.addEventListener('online',  alertOnlineStatus);
-      window.addEventListener('offline',  alertOnlineStatus);
+  window.addEventListener('online',  alertOnlineStatus);
+  window.addEventListener('offline',  alertOnlineStatus);
 
-      alertOnlineStatus();
-    </script>
-  </body>
+  alertOnlineStatus();
+</script>
+</body>
 </html>
 ```
 
-There may be instances where one wants to respond to these events in the
-browser process as well.  The browser process however does not have a
-`navigator` object and thus cannot detect these events directly.  Using
-Atom-shell's inter-process communication utilities, the events can be forwarded
-to the browser process and handled as needed, as shown in the following example.
+There may be instances where you want to respond to these events in the
+main process as well. The main process however does not have a
+`navigator` object and thus cannot detect these events directly. Using
+Electron's inter-process communication utilities, the events can be forwarded
+to the main process and handled as needed, as shown in the following example.
 
 _main.js_
 
 ```javascript
-var app = require('app');
-var ipc = require('ipc');
-var BrowserWindow = require('browser-window');
-var onlineStatusWindow;
+const electron = require('electron');
+const app = electron.app;
+const ipcMain = electron.ipcMain;
+const BrowserWindow = electron.BrowserWindow;
 
-app.on('ready', function() {
+let onlineStatusWindow;
+
+app.on('ready', () => {
   onlineStatusWindow = new BrowserWindow({ width: 0, height: 0, show: false });
-  onlineStatusWindow.loadUrl('file://' + __dirname + '/online-status.html');
+  onlineStatusWindow.loadURL(`file://${__dirname}/online-status.html`);
 });
 
-ipc.on('online-status-changed', function(event, status) {
+ipcMain.on('online-status-changed', (event, status) => {
   console.log(status);
 });
 ```
@@ -62,19 +67,20 @@ ipc.on('online-status-changed', function(event, status) {
 _online-status.html_
 
 ```html
+<!DOCTYPE html>
 <html>
-  <body>
-    <script>
-      var ipc = require('ipc');
-      var updateOnlineStatus = function() {
-        ipc.send('online-status-changed', navigator.onLine ? 'online' : 'offline');
-      };
+<body>
+<script>
+  const {ipcRenderer} = require('electron');
+  const updateOnlineStatus = () => {
+    ipcRenderer.send('online-status-changed', navigator.onLine ? 'online' : 'offline');
+  };
 
-      window.addEventListener('online',  updateOnlineStatus);
-      window.addEventListener('offline',  updateOnlineStatus);
+  window.addEventListener('online',  updateOnlineStatus);
+  window.addEventListener('offline',  updateOnlineStatus);
 
-      updateOnlineStatus();
-    </script>
-  </body>
+  updateOnlineStatus();
+</script>
+</body>
 </html>
 ```

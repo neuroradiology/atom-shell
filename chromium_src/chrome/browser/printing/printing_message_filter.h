@@ -40,10 +40,10 @@ class PrintingMessageFilter : public content::BrowserMessageFilter {
   PrintingMessageFilter(int render_process_id);
 
   // content::BrowserMessageFilter methods.
-  virtual void OverrideThreadForMessage(
+  void OverrideThreadForMessage(
       const IPC::Message& message,
-      content::BrowserThread::ID* thread) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+      content::BrowserThread::ID* thread) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
   virtual ~PrintingMessageFilter();
@@ -96,9 +96,18 @@ class PrintingMessageFilter : public content::BrowserMessageFilter {
   void OnScriptedPrintReply(scoped_refptr<PrinterQuery> printer_query,
                             IPC::Message* reply_msg);
 
+  // Modify the current print settings based on |job_settings|. The task is
+  // handled by the print worker thread and the UI thread. The reply occurs on
+  // the IO thread.
+  void OnUpdatePrintSettings(int document_cookie,
+                             const base::DictionaryValue& job_settings,
+                             IPC::Message* reply_msg);
+  void OnUpdatePrintSettingsReply(scoped_refptr<PrinterQuery> printer_query,
+                                  IPC::Message* reply_msg);
+
 #if defined(ENABLE_FULL_PRINTING)
   // Check to see if print preview has been cancelled.
-  void OnCheckForCancel(int32 preview_ui_id,
+  void OnCheckForCancel(int32_t preview_ui_id,
                         int preview_request_id,
                         bool* cancel);
 #endif

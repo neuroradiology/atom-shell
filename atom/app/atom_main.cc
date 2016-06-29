@@ -5,20 +5,19 @@
 #include "atom/app/atom_main.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 #if defined(OS_WIN)
-#include <stdio.h>
-#include <io.h>
-#include <fcntl.h>
-
 #include <windows.h>
+#include <shellscalingapi.h>
+#include <tchar.h>
 #include <shellapi.h>
 
 #include "atom/app/atom_main_delegate.h"
 #include "atom/common/crash_reporter/win/crash_service_main.h"
 #include "base/environment.h"
-#include "content/public/app/startup_helper_win.h"
+#include "base/process/launch.h"
+#include "base/win/windows_version.h"
+#include "content/public/app/sandbox_helper_win.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "ui/gfx/win/dpi.h"
 #elif defined(OS_LINUX)  // defined(OS_WIN)
@@ -28,71 +27,79 @@
 #include "atom/app/atom_library_main.h"
 #endif  // defined(OS_MACOSX)
 
-// Declaration of node::Start.
-namespace node {
-int Start(int argc, char *argv[]);
+#include "atom/app/node_main.h"
+#include "atom/common/atom_command_line.h"
+#include "base/at_exit.h"
+#include "base/i18n/icu_util.h"
+
+namespace {
+
+const char* kRunAsNode = "ELECTRON_RUN_AS_NODE";
+
+bool IsEnvSet(const char* name) {
+#if defined(OS_WIN)
+  size_t required_size;
+  getenv_s(&required_size, nullptr, 0, name);
+  return required_size != 0;
+#else
+  char* indicator = getenv(name);
+  return indicator && indicator[0] != '\0';
+#endif
 }
 
-#if defined(OS_WIN)
+}  // namespace
 
+#if defined(OS_WIN)
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* cmd, int) {
   int argc = 0;
   wchar_t** wargv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
 
-  scoped_ptr<base::Environment> env(base::Environment::Create());
+  bool run_as_node = IsEnvSet(kRunAsNode);
 
-  // Make output work in console if we are not in cygiwn.
-  std::string os;
-  if (env->GetVar("OS", &os) && os != "cygwin") {
-    AttachConsole(ATTACH_PARENT_PROCESS);
+  // Make sure the output is printed to console.
+  if (run_as_node || !IsEnvSet("ELECTRON_NO_ATTACH_CONSOLE"))
+    base::RouteStdioToConsole(false);
 
-    FILE* dontcare;
-    freopen_s(&dontcare, "CON", "w", stdout);
-    freopen_s(&dontcare, "CON", "w", stderr);
-    freopen_s(&dontcare, "CON", "r", stdin);
-  }
-
-  std::string node_indicator, crash_service_indicator;
-  if (env->GetVar("ATOM_SHELL_INTERNAL_RUN_AS_NODE", &node_indicator) &&
-      node_indicator == "1") {
-    // Convert argv to to UTF8
-    char** argv = new char*[argc];
-    for (int i = 0; i < argc; i++) {
-      // Compute the size of the required buffer
-      DWORD size = WideCharToMultiByte(CP_UTF8,
+  // Convert argv to to UTF8
+  char** argv = new char*[argc];
+  for (int i = 0; i < argc; i++) {
+    // Compute the size of the required buffer
+    DWORD size = WideCharToMultiByte(CP_UTF8,
+                                     0,
+                                     wargv[i],
+                                     -1,
+                                     NULL,
+                                     0,
+                                     NULL,
+                                     NULL);
+    if (size == 0) {
+      // This should never happen.
+      fprintf(stderr, "Could not convert arguments to utf8.");
+      exit(1);
+    }
+    // Do the actual conversion
+    argv[i] = new char[size];
+    DWORD result = WideCharToMultiByte(CP_UTF8,
                                        0,
                                        wargv[i],
                                        -1,
-                                       NULL,
-                                       0,
+                                       argv[i],
+                                       size,
                                        NULL,
                                        NULL);
-      if (size == 0) {
-        // This should never happen.
-        fprintf(stderr, "Could not convert arguments to utf8.");
-        exit(1);
-      }
-      // Do the actual conversion
-      argv[i] = new char[size];
-      DWORD result = WideCharToMultiByte(CP_UTF8,
-                                         0,
-                                         wargv[i],
-                                         -1,
-                                         argv[i],
-                                         size,
-                                         NULL,
-                                         NULL);
-      if (result == 0) {
-        // This should never happen.
-        fprintf(stderr, "Could not convert arguments to utf8.");
-        exit(1);
-      }
+    if (result == 0) {
+      // This should never happen.
+      fprintf(stderr, "Could not convert arguments to utf8.");
+      exit(1);
     }
-    // Now that conversion is done, we can finally start.
-    return node::Start(argc, argv);
-  } else if (env->GetVar("ATOM_SHELL_INTERNAL_CRASH_SERVICE",
-                         &crash_service_indicator) &&
-      crash_service_indicator == "1") {
+  }
+
+  if (run_as_node) {
+    // Now that argv conversion is done, we can finally start.
+    base::AtExitManager atexit_manager;
+    base::i18n::InitializeICU();
+    return atom::NodeMain(argc, argv);
+  } else if (IsEnvSet("ELECTRON_INTERNAL_CRASH_SERVICE")) {
     return crash_service::Main(cmd);
   }
 
@@ -100,35 +107,37 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t* cmd, int) {
   content::InitializeSandboxInfo(&sandbox_info);
   atom::AtomMainDelegate delegate;
 
-  // Now chrome relies on a regkey to enable high dpi support.
-  gfx::EnableHighDPISupport();
-
   content::ContentMainParams params(&delegate);
   params.instance = instance;
   params.sandbox_info = &sandbox_info;
+  atom::AtomCommandLine::Init(argc, argv);
+  atom::AtomCommandLine::InitW(argc, wargv);
   return content::ContentMain(params);
 }
 
 #elif defined(OS_LINUX)  // defined(OS_WIN)
 
 int main(int argc, const char* argv[]) {
-  char* node_indicator = getenv("ATOM_SHELL_INTERNAL_RUN_AS_NODE");
-  if (node_indicator != NULL && strcmp(node_indicator, "1") == 0)
-    return node::Start(argc, const_cast<char**>(argv));
+  if (IsEnvSet(kRunAsNode)) {
+    base::i18n::InitializeICU();
+    base::AtExitManager atexit_manager;
+    return atom::NodeMain(argc, const_cast<char**>(argv));
+  }
 
   atom::AtomMainDelegate delegate;
   content::ContentMainParams params(&delegate);
   params.argc = argc;
   params.argv = argv;
+  atom::AtomCommandLine::Init(argc, argv);
   return content::ContentMain(params);
 }
 
 #else  // defined(OS_LINUX)
 
 int main(int argc, const char* argv[]) {
-  char* node_indicator = getenv("ATOM_SHELL_INTERNAL_RUN_AS_NODE");
-  if (node_indicator != NULL && strcmp(node_indicator, "1") == 0)
-    return node::Start(argc, const_cast<char**>(argv));
+  if (IsEnvSet(kRunAsNode)) {
+    return AtomInitializeICUandStartNode(argc, const_cast<char**>(argv));
+  }
 
   return AtomMain(argc, argv);
 }

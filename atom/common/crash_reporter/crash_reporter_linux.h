@@ -12,7 +12,9 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 
+namespace base {
 template <typename T> struct DefaultSingletonTraits;
+}
 
 namespace google_breakpad {
 class ExceptionHandler;
@@ -25,16 +27,16 @@ class CrashReporterLinux : public CrashReporter {
  public:
   static CrashReporterLinux* GetInstance();
 
-  virtual void InitBreakpad(const std::string& product_name,
-                            const std::string& version,
-                            const std::string& company_name,
-                            const std::string& submit_url,
-                            bool auto_submit,
-                            bool skip_system_crash_handler) OVERRIDE;
-  virtual void SetUploadParameters() OVERRIDE;
+  void InitBreakpad(const std::string& product_name,
+                    const std::string& version,
+                    const std::string& company_name,
+                    const std::string& submit_url,
+                    bool auto_submit,
+                    bool skip_system_crash_handler) override;
+  void SetUploadParameters() override;
 
  private:
-  friend struct DefaultSingletonTraits<CrashReporterLinux>;
+  friend struct base::DefaultSingletonTraits<CrashReporterLinux>;
 
   CrashReporterLinux();
   virtual ~CrashReporterLinux();
@@ -45,7 +47,7 @@ class CrashReporterLinux : public CrashReporter {
                         void* context,
                         const bool succeeded);
 
-  scoped_ptr<google_breakpad::ExceptionHandler> breakpad_;
+  std::unique_ptr<google_breakpad::ExceptionHandler> breakpad_;
   CrashKeyStorage crash_keys_;
 
   uint64_t process_start_time_;

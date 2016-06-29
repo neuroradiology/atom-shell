@@ -17,10 +17,9 @@ namespace api {
 
 class MenuMac : public Menu {
  protected:
-  MenuMac();
+  explicit MenuMac(v8::Isolate* isolate);
 
-  virtual void Popup(Window* window) OVERRIDE;
-  virtual void PopupAt(Window* window, int x, int y) OVERRIDE;
+  void PopupAt(Window* window, int x, int y, int positioning_item) override;
 
   base::scoped_nsobject<AtomMenuController> menu_controller_;
 

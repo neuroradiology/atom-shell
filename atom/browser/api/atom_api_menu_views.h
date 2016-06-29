@@ -14,15 +14,12 @@ namespace api {
 
 class MenuViews : public Menu {
  public:
-  MenuViews();
+  explicit MenuViews(v8::Isolate* isolate);
 
  protected:
-  virtual void Popup(Window* window) OVERRIDE;
-  virtual void PopupAt(Window* window, int x, int y) OVERRIDE;
+  void PopupAt(Window* window, int x, int y, int positioning_item) override;
 
  private:
-  void PopupAtPoint(Window* window, const gfx::Point& point);
-
   DISALLOW_COPY_AND_ASSIGN(MenuViews);
 };
 

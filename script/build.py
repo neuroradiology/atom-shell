@@ -5,6 +5,9 @@ import os
 import subprocess
 import sys
 
+from lib.config import get_target_arch
+from lib.util import electron_gyp, import_vs_env
+
 
 CONFIGURATIONS = ['Release', 'Debug']
 SOURCE_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
@@ -13,20 +16,23 @@ SOURCE_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 def main():
   os.chdir(SOURCE_ROOT)
 
+  # Update the VS build env.
+  import_vs_env(get_target_arch())
+
   ninja = os.path.join('vendor', 'depot_tools', 'ninja')
   if sys.platform == 'win32':
     ninja += '.exe'
 
   args = parse_args()
   for config in args.configuration:
-    build_path = os.path.join('out', config)
+    build_path = os.path.join('out', config[0])
     ret = subprocess.call([ninja, '-C', build_path, args.target])
     if ret != 0:
       sys.exit(ret)
 
 
 def parse_args():
-  parser = argparse.ArgumentParser(description='Build atom-shell')
+  parser = argparse.ArgumentParser(description='Build project')
   parser.add_argument('-c', '--configuration',
                       help='Build with Release or Debug configuration',
                       nargs='+',
@@ -34,7 +40,7 @@ def parse_args():
                       required=False)
   parser.add_argument('-t', '--target',
                       help='Build specified target',
-                      default='atom',
+                      default=electron_gyp()['project_name%'],
                       required=False)
   return parser.parse_args()
 

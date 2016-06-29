@@ -7,44 +7,45 @@
 
 #include <string>
 
-#include "base/callback.h"
 #include "atom/browser/api/event_emitter.h"
-#include "atom/browser/auto_updater_delegate.h"
+#include "atom/browser/auto_updater.h"
+#include "atom/browser/window_list_observer.h"
+#include "native_mate/arguments.h"
 #include "native_mate/handle.h"
 
 namespace atom {
 
 namespace api {
 
-class AutoUpdater : public mate::EventEmitter,
-                    public auto_updater::AutoUpdaterDelegate {
+class AutoUpdater : public mate::EventEmitter<AutoUpdater>,
+                    public auto_updater::Delegate,
+                    public WindowListObserver {
  public:
   static mate::Handle<AutoUpdater> Create(v8::Isolate* isolate);
 
+  static void BuildPrototype(v8::Isolate* isolate,
+                             v8::Local<v8::ObjectTemplate> prototype);
+
  protected:
-  AutoUpdater();
-  virtual ~AutoUpdater();
+  explicit AutoUpdater(v8::Isolate* isolate);
+  ~AutoUpdater() override;
 
-  // AutoUpdaterDelegate implementations.
-  virtual void OnError(const std::string& error) OVERRIDE;
-  virtual void OnCheckingForUpdate() OVERRIDE;
-  virtual void OnUpdateAvailable() OVERRIDE;
-  virtual void OnUpdateNotAvailable() OVERRIDE;
-  virtual void OnUpdateDownloaded(
-      const std::string& release_notes,
-      const std::string& release_name,
-      const base::Time& release_date,
-      const std::string& update_url,
-      const base::Closure& quit_and_install) OVERRIDE;
+  // Delegate implementations.
+  void OnError(const std::string& error) override;
+  void OnCheckingForUpdate() override;
+  void OnUpdateAvailable() override;
+  void OnUpdateNotAvailable() override;
+  void OnUpdateDownloaded(const std::string& release_notes,
+                          const std::string& release_name,
+                          const base::Time& release_date,
+                          const std::string& update_url) override;
 
-  // mate::Wrappable implementations:
-  virtual mate::ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate);
+  // WindowListObserver:
+  void OnWindowAllClosed() override;
 
  private:
+  void SetFeedURL(const std::string& url, mate::Arguments* args);
   void QuitAndInstall();
-
-  base::Closure quit_and_install_;
 
   DISALLOW_COPY_AND_ASSIGN(AutoUpdater);
 };

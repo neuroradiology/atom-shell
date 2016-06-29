@@ -13,43 +13,44 @@ namespace atom {
 
 namespace api {
 
-MenuViews::MenuViews() {
+MenuViews::MenuViews(v8::Isolate* isolate) : Menu(isolate) {
 }
 
-void MenuViews::Popup(Window* window) {
-  PopupAtPoint(window, gfx::Screen::GetNativeScreen()->GetCursorScreenPoint());
-}
-
-void MenuViews::PopupAt(Window* window, int x, int y) {
+void MenuViews::PopupAt(Window* window, int x, int y, int positioning_item) {
   NativeWindow* native_window = static_cast<NativeWindow*>(window->window());
   if (!native_window)
     return;
-  content::WebContents* web_contents = native_window->GetWebContents();
+  content::WebContents* web_contents = native_window->web_contents();
   if (!web_contents)
     return;
   content::RenderWidgetHostView* view = web_contents->GetRenderWidgetHostView();
   if (!view)
     return;
 
-  gfx::Point origin = view->GetViewBounds().origin();
-  PopupAtPoint(window, gfx::Point(origin.x() + x, origin.y() + y));
-}
+  // (-1, -1) means showing on mouse location.
+  gfx::Point location;
+  if (x == -1 || y == -1) {
+    location = gfx::Screen::GetScreen()->GetCursorScreenPoint();
+  } else {
+    gfx::Point origin = view->GetViewBounds().origin();
+    location = gfx::Point(origin.x() + x, origin.y() + y);
+  }
 
-void MenuViews::PopupAtPoint(Window* window, const gfx::Point& point) {
+  // Show the menu.
   views::MenuRunner menu_runner(
       model(),
       views::MenuRunner::CONTEXT_MENU | views::MenuRunner::HAS_MNEMONICS);
   ignore_result(menu_runner.RunMenuAt(
       static_cast<NativeWindowViews*>(window->window())->widget(),
       NULL,
-      gfx::Rect(point, gfx::Size()),
+      gfx::Rect(location, gfx::Size()),
       views::MENU_ANCHOR_TOPLEFT,
       ui::MENU_SOURCE_MOUSE));
 }
 
 // static
-mate::Wrappable* Menu::Create() {
-  return new MenuViews();
+mate::WrappableBase* Menu::Create(v8::Isolate* isolate) {
+  return new MenuViews(isolate);
 }
 
 }  // namespace api

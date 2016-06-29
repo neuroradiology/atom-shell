@@ -7,6 +7,7 @@
 
 #include <list>
 
+#include "base/macros.h"
 #include "base/strings/string16.h"
 #include "v8/include/v8.h"
 #include "vendor/node/deps/uv/include/uv.h"
@@ -24,7 +25,7 @@ class AtomBindings {
 
   // Add process.atomBinding function, which behaves like process.binding but
   // load native code from atom-shell instead.
-  virtual void BindTo(v8::Isolate* isolate, v8::Handle<v8::Object> process);
+  void BindTo(v8::Isolate* isolate, v8::Local<v8::Object> process);
 
  private:
   void ActivateUVLoop(v8::Isolate* isolate);

@@ -9,6 +9,8 @@
 #include "atom/browser/native_window.h"
 #include "atom/browser/window_list.h"
 #include "atom/common/atom_version.h"
+#include "brightray/common/application_info.h"
+#include "chrome/browser/ui/libgtk2ui/unity_service.h"
 
 namespace atom {
 
@@ -30,12 +32,42 @@ void Browser::AddRecentDocument(const base::FilePath& path) {
 void Browser::ClearRecentDocuments() {
 }
 
+void Browser::SetAppUserModelID(const base::string16& name) {
+}
+
+bool Browser::RemoveAsDefaultProtocolClient(const std::string& protocol) {
+  return false;
+}
+
+bool Browser::SetAsDefaultProtocolClient(const std::string& protocol) {
+  return false;
+}
+
+bool Browser::IsDefaultProtocolClient(const std::string& protocol) {
+  return false;
+}
+
 std::string Browser::GetExecutableFileVersion() const {
-  return ATOM_VERSION_STRING;
+  return brightray::GetApplicationVersion();
 }
 
 std::string Browser::GetExecutableFileProductName() const {
-  return "Atom-Shell";
+  return brightray::GetApplicationName();
+}
+
+bool Browser::UnityLauncherAvailable() {
+  return unity::IsRunning();
+}
+
+void Browser::UnityLauncherSetBadgeCount(int count) {
+  if (UnityLauncherAvailable()) {
+    current_badge_count_ = count;
+    unity::SetDownloadCount(count);
+  }
+}
+
+int Browser::UnityLauncherGetBadgeCount() {
+  return current_badge_count_;
 }
 
 }  // namespace atom

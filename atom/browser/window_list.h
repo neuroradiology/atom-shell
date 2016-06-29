@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/lazy_instance.h"
 #include "base/observer_list.h"
 
@@ -60,7 +60,8 @@ class WindowList {
 
   // A list of observers which will be notified of every window addition and
   // removal across all WindowLists.
-  static base::LazyInstance<ObserverList<WindowListObserver>>::Leaky observers_;
+  static base::LazyInstance<base::ObserverList<WindowListObserver>>::Leaky
+      observers_;
 
   static WindowList* instance_;
 

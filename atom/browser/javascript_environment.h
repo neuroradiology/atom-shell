@@ -5,7 +5,7 @@
 #ifndef ATOM_BROWSER_JAVASCRIPT_ENVIRONMENT_H_
 #define ATOM_BROWSER_JAVASCRIPT_ENVIRONMENT_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "gin/public/isolate_holder.h"
 
 namespace atom {
@@ -14,12 +14,18 @@ class JavascriptEnvironment {
  public:
   JavascriptEnvironment();
 
+  void OnMessageLoopCreated();
+  void OnMessageLoopDestroying();
+
   v8::Isolate* isolate() const { return isolate_; }
   v8::Local<v8::Context> context() const {
     return v8::Local<v8::Context>::New(isolate_, context_);
   }
 
  private:
+  bool Initialize();
+
+  bool initialized_;
   gin::IsolateHolder isolate_holder_;
   v8::Isolate* isolate_;
   v8::Isolate::Scope isolate_scope_;

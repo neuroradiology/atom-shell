@@ -6,7 +6,7 @@
 
 #include <vector>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/threading/thread_restrictions.h"
 
 namespace asar {
@@ -17,29 +17,49 @@ ScopedTemporaryFile::ScopedTemporaryFile() {
 ScopedTemporaryFile::~ScopedTemporaryFile() {
   if (!path_.empty()) {
     base::ThreadRestrictions::ScopedAllowIO allow_io;
+    // On Windows it is very likely the file is already in use (because it is
+    // mostly used for Node native modules), so deleting it now will halt the
+    // program.
+#if defined(OS_WIN)
+    base::DeleteFileAfterReboot(path_);
+#else
     base::DeleteFile(path_, false);
+#endif
   }
 }
 
-bool ScopedTemporaryFile::Init() {
+bool ScopedTemporaryFile::Init(const base::FilePath::StringType& ext) {
   if (!path_.empty())
     return true;
 
   base::ThreadRestrictions::ScopedAllowIO allow_io;
-  return base::CreateTemporaryFile(&path_);
-}
-
-bool ScopedTemporaryFile::InitFromFile(const base::FilePath& path,
-                                       uint64 offset, uint64 size) {
-  if (!Init())
+  if (!base::CreateTemporaryFile(&path_))
     return false;
 
-  base::File src(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
-  if (!src.IsValid())
+#if defined(OS_WIN)
+  // Keep the original extension.
+  if (!ext.empty()) {
+    base::FilePath new_path = path_.AddExtension(ext);
+    if (!base::Move(path_, new_path))
+      return false;
+    path_ = new_path;
+  }
+#endif
+
+  return true;
+}
+
+bool ScopedTemporaryFile::InitFromFile(base::File* src,
+                                       const base::FilePath::StringType& ext,
+                                       uint64_t offset, uint64_t size) {
+  if (!src->IsValid())
+    return false;
+
+  if (!Init(ext))
     return false;
 
   std::vector<char> buf(size);
-  int len = src.Read(offset, buf.data(), buf.size());
+  int len = src->Read(offset, buf.data(), buf.size());
   if (len != static_cast<int>(size))
     return false;
 

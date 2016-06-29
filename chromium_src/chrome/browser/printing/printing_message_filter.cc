@@ -71,10 +71,6 @@ void RenderParamsFromPrintSettings(const PrintSettings& settings,
   params->margin_top = settings.page_setup_device_units().content_area().y();
   params->margin_left = settings.page_setup_device_units().content_area().x();
   params->dpi = settings.dpi();
-  // Currently hardcoded at 1.25. See PrintSettings' constructor.
-  params->min_shrink = settings.min_shrink();
-  // Currently hardcoded at 2.0. See PrintSettings' constructor.
-  params->max_shrink = settings.max_shrink();
   // Currently hardcoded at 72dpi. See PrintSettings' constructor.
   params->desired_dpi = settings.desired_dpi();
   // Always use an invalid cookie.
@@ -128,6 +124,8 @@ bool PrintingMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER_DELAY_REPLY(PrintHostMsg_GetDefaultPrintSettings,
                                     OnGetDefaultPrintSettings)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(PrintHostMsg_ScriptedPrint, OnScriptedPrint)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(PrintHostMsg_UpdatePrintSettings,
+                                    OnUpdatePrintSettings)
 #if defined(ENABLE_FULL_PRINTING)
     IPC_MESSAGE_HANDLER(PrintHostMsg_CheckForCancel, OnCheckForCancel)
 #endif
@@ -142,7 +140,7 @@ void PrintingMessageFilter::OnDuplicateSection(
     base::SharedMemoryHandle* browser_handle) {
   // Duplicate the handle in this process right now so the memory is kept alive
   // (even if it is not mapped)
-  base::SharedMemory shared_buf(renderer_handle, true, PeerHandle());
+  base::SharedMemory shared_buf(renderer_handle, true);
   shared_buf.GiveToProcess(base::GetCurrentProcessHandle(), browser_handle);
 }
 #endif
@@ -371,5 +369,58 @@ void PrintingMessageFilter::UpdateFileDescriptor(int render_view_id, int fd) {
   print_view_manager->set_file_descriptor(base::FileDescriptor(fd, false));
 }
 #endif
+
+void PrintingMessageFilter::OnUpdatePrintSettings(
+    int document_cookie, const base::DictionaryValue& job_settings,
+    IPC::Message* reply_msg) {
+  std::unique_ptr<base::DictionaryValue> new_settings(job_settings.DeepCopy());
+
+  scoped_refptr<PrinterQuery> printer_query;
+  printer_query = queue_->PopPrinterQuery(document_cookie);
+  if (!printer_query.get()) {
+    int host_id = render_process_id_;
+    int routing_id = reply_msg->routing_id();
+    if (!new_settings->GetInteger(printing::kPreviewInitiatorHostId,
+                                  &host_id) ||
+        !new_settings->GetInteger(printing::kPreviewInitiatorRoutingId,
+                                  &routing_id)) {
+      host_id = content::ChildProcessHost::kInvalidUniqueID;
+      routing_id = content::ChildProcessHost::kInvalidUniqueID;
+    }
+    printer_query = queue_->CreatePrinterQuery(host_id, routing_id);
+  }
+  printer_query->SetSettings(
+      std::move(new_settings),
+      base::Bind(&PrintingMessageFilter::OnUpdatePrintSettingsReply, this,
+                 printer_query, reply_msg));
+}
+
+void PrintingMessageFilter::OnUpdatePrintSettingsReply(
+    scoped_refptr<PrinterQuery> printer_query,
+    IPC::Message* reply_msg) {
+  PrintMsg_PrintPages_Params params;
+  if (!printer_query.get() ||
+      printer_query->last_status() != PrintingContext::OK) {
+    params.Reset();
+  } else {
+    RenderParamsFromPrintSettings(printer_query->settings(), &params.params);
+    params.params.document_cookie = printer_query->cookie();
+    params.pages = PageRange::GetPages(printer_query->settings().ranges());
+  }
+  PrintHostMsg_UpdatePrintSettings::WriteReplyParams(
+      reply_msg,
+      params,
+      printer_query.get() &&
+          (printer_query->last_status() == printing::PrintingContext::CANCEL));
+  Send(reply_msg);
+  // If user hasn't cancelled.
+  if (printer_query.get()) {
+    if (printer_query->cookie() && printer_query->settings().dpi()) {
+      queue_->QueuePrinterQuery(printer_query.get());
+    } else {
+      printer_query->StopWorker();
+    }
+  }
+}
 
 }  // namespace printing

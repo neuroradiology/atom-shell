@@ -6,6 +6,8 @@
 
 #include "atom/browser/native_window.h"
 #include "atom/common/native_mate_converters/accelerator_converter.h"
+#include "atom/common/native_mate_converters/callback.h"
+#include "atom/common/native_mate_converters/image_converter.h"
 #include "atom/common/native_mate_converters/string16_converter.h"
 #include "native_mate/constructor.h"
 #include "native_mate/dictionary.h"
@@ -17,143 +19,56 @@ namespace atom {
 
 namespace api {
 
-namespace {
-
-// Call method of delegate object.
-v8::Handle<v8::Value> CallDelegate(v8::Isolate* isolate,
-                                   v8::Handle<v8::Value> default_value,
-                                   v8::Handle<v8::Object> menu,
-                                   const char* method,
-                                   int command_id) {
-  v8::Handle<v8::Value> delegate = menu->Get(
-      MATE_STRING_NEW(isolate, "delegate"));
-  if (!delegate->IsObject())
-    return default_value;
-
-  v8::Handle<v8::Function> function = v8::Handle<v8::Function>::Cast(
-      delegate->ToObject()->Get(MATE_STRING_NEW(isolate, method)));
-  if (!function->IsFunction())
-    return default_value;
-
-  v8::Handle<v8::Value> argv = MATE_INTEGER_NEW(isolate, command_id);
-  return function->Call(isolate->GetCurrentContext()->Global(), 1, &argv);
-}
-
-}  // namespace
-
-Menu::Menu()
-    : model_(new ui::SimpleMenuModel(this)),
+Menu::Menu(v8::Isolate* isolate)
+    : model_(new AtomMenuModel(this)),
       parent_(NULL) {
 }
 
 Menu::~Menu() {
 }
 
+void Menu::AfterInit(v8::Isolate* isolate) {
+  mate::Dictionary wrappable(isolate, GetWrapper());
+  mate::Dictionary delegate;
+  if (!wrappable.Get("delegate", &delegate))
+    return;
+
+  delegate.Get("isCommandIdChecked", &is_checked_);
+  delegate.Get("isCommandIdEnabled", &is_enabled_);
+  delegate.Get("isCommandIdVisible", &is_visible_);
+  delegate.Get("getAcceleratorForCommandId", &get_accelerator_);
+  delegate.Get("executeCommand", &execute_command_);
+  delegate.Get("menuWillShow", &menu_will_show_);
+}
+
 bool Menu::IsCommandIdChecked(int command_id) const {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  return CallDelegate(isolate,
-                      MATE_FALSE(isolate),
-                      const_cast<Menu*>(this)->GetWrapper(isolate),
-                      "isCommandIdChecked",
-                      command_id)->BooleanValue();
+  return is_checked_.Run(command_id);
 }
 
 bool Menu::IsCommandIdEnabled(int command_id) const {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  return CallDelegate(isolate,
-                      MATE_TRUE(isolate),
-                      const_cast<Menu*>(this)->GetWrapper(isolate),
-                      "isCommandIdEnabled",
-                      command_id)->BooleanValue();
+  return is_enabled_.Run(command_id);
 }
 
 bool Menu::IsCommandIdVisible(int command_id) const {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  return CallDelegate(isolate,
-                      MATE_TRUE(isolate),
-                      const_cast<Menu*>(this)->GetWrapper(isolate),
-                      "isCommandIdVisible",
-                      command_id)->BooleanValue();
+  return is_visible_.Run(command_id);
 }
 
 bool Menu::GetAcceleratorForCommandId(int command_id,
                                       ui::Accelerator* accelerator) {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Value> shortcut = CallDelegate(isolate,
-                                                MATE_UNDEFINED(isolate),
-                                                GetWrapper(isolate),
-                                                "getAcceleratorForCommandId",
-                                                command_id);
-  return mate::ConvertFromV8(isolate, shortcut, accelerator);
+  v8::Locker locker(isolate());
+  v8::HandleScope handle_scope(isolate());
+  v8::Local<v8::Value> val = get_accelerator_.Run(command_id);
+  return mate::ConvertFromV8(isolate(), val, accelerator);
 }
 
-bool Menu::IsItemForCommandIdDynamic(int command_id) const {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  return CallDelegate(isolate,
-                      MATE_FALSE(isolate),
-                      const_cast<Menu*>(this)->GetWrapper(isolate),
-                      "isItemForCommandIdDynamic",
-                      command_id)->BooleanValue();
-}
-
-base::string16 Menu::GetLabelForCommandId(int command_id) const {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Value> result = CallDelegate(
-      isolate,
-      MATE_FALSE(isolate),
-      const_cast<Menu*>(this)->GetWrapper(isolate),
-      "getLabelForCommandId",
+void Menu::ExecuteCommand(int command_id, int flags) {
+  execute_command_.Run(
+      mate::internal::CreateEventFromFlags(isolate(), flags),
       command_id);
-  base::string16 label;
-  mate::ConvertFromV8(isolate, result, &label);
-  return label;
-}
-
-base::string16 Menu::GetSublabelForCommandId(int command_id) const {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Value> result = CallDelegate(
-      isolate,
-      MATE_FALSE(isolate),
-      const_cast<Menu*>(this)->GetWrapper(isolate),
-      "getSubLabelForCommandId",
-      command_id);
-  base::string16 label;
-  mate::ConvertFromV8(isolate, result, &label);
-  return label;
-}
-
-void Menu::ExecuteCommand(int command_id, int event_flags) {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  CallDelegate(isolate, MATE_FALSE(isolate), GetWrapper(isolate),
-               "executeCommand", command_id);
 }
 
 void Menu::MenuWillShow(ui::SimpleMenuModel* source) {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  v8::Locker locker(isolate);
-  v8::HandleScope handle_scope(isolate);
-  CallDelegate(isolate, MATE_FALSE(isolate), GetWrapper(isolate),
-               "menuWillShow", -1);
-}
-
-void Menu::AttachToWindow(Window* window) {
-  window->window()->SetMenu(model_.get());
+  menu_will_show_.Run();
 }
 
 void Menu::InsertItemAt(
@@ -186,8 +101,16 @@ void Menu::InsertSubMenuAt(int index,
   model_->InsertSubMenuAt(index, command_id, label, menu->model_.get());
 }
 
+void Menu::SetIcon(int index, const gfx::Image& image) {
+  model_->SetIcon(index, image);
+}
+
 void Menu::SetSublabel(int index, const base::string16& sublabel) {
   model_->SetSublabel(index, sublabel);
+}
+
+void Menu::SetRole(int index, const base::string16& role) {
+  model_->SetRole(index, role);
 }
 
 void Menu::Clear() {
@@ -228,14 +151,17 @@ bool Menu::IsVisibleAt(int index) const {
 
 // static
 void Menu::BuildPrototype(v8::Isolate* isolate,
-                          v8::Handle<v8::ObjectTemplate> prototype) {
+                          v8::Local<v8::ObjectTemplate> prototype) {
   mate::ObjectTemplateBuilder(isolate, prototype)
+      .MakeDestroyable()
       .SetMethod("insertItem", &Menu::InsertItemAt)
       .SetMethod("insertCheckItem", &Menu::InsertCheckItemAt)
       .SetMethod("insertRadioItem", &Menu::InsertRadioItemAt)
       .SetMethod("insertSeparator", &Menu::InsertSeparatorAt)
       .SetMethod("insertSubMenu", &Menu::InsertSubMenuAt)
+      .SetMethod("setIcon", &Menu::SetIcon)
       .SetMethod("setSublabel", &Menu::SetSublabel)
+      .SetMethod("setRole", &Menu::SetRole)
       .SetMethod("clear", &Menu::Clear)
       .SetMethod("getIndexOfCommandId", &Menu::GetIndexOfCommandId)
       .SetMethod("getItemCount", &Menu::GetItemCount)
@@ -245,9 +171,7 @@ void Menu::BuildPrototype(v8::Isolate* isolate,
       .SetMethod("isItemCheckedAt", &Menu::IsItemCheckedAt)
       .SetMethod("isEnabledAt", &Menu::IsEnabledAt)
       .SetMethod("isVisibleAt", &Menu::IsVisibleAt)
-      .SetMethod("attachToWindow", &Menu::AttachToWindow)
-      .SetMethod("_popup", &Menu::Popup)
-      .SetMethod("_popupAt", &Menu::PopupAt);
+      .SetMethod("popupAt", &Menu::PopupAt);
 }
 
 }  // namespace api
@@ -257,14 +181,14 @@ void Menu::BuildPrototype(v8::Isolate* isolate,
 
 namespace {
 
-void Initialize(v8::Handle<v8::Object> exports, v8::Handle<v8::Value> unused,
-                v8::Handle<v8::Context> context, void* priv) {
+void Initialize(v8::Local<v8::Object> exports, v8::Local<v8::Value> unused,
+                v8::Local<v8::Context> context, void* priv) {
   using atom::api::Menu;
   v8::Isolate* isolate = context->GetIsolate();
   v8::Local<v8::Function> constructor = mate::CreateConstructor<Menu>(
       isolate, "Menu", base::Bind(&Menu::Create));
   mate::Dictionary dict(isolate, exports);
-  dict.Set("Menu", static_cast<v8::Handle<v8::Value>>(constructor));
+  dict.Set("Menu", static_cast<v8::Local<v8::Value>>(constructor));
 #if defined(OS_MACOSX)
   dict.SetMethod("setApplicationMenu", &Menu::SetApplicationMenu);
   dict.SetMethod("sendActionToFirstResponder",

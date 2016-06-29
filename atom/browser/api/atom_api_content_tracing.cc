@@ -5,54 +5,32 @@
 #include <set>
 #include <string>
 
+#include "atom/common/native_mate_converters/callback.h"
 #include "atom/common/native_mate_converters/file_path_converter.h"
-#include "base/bind.h"
-#include "content/public/browser/tracing_controller.h"
-#include "native_mate/callback.h"
-#include "native_mate/dictionary.h"
-
 #include "atom/common/node_includes.h"
+#include "base/bind.h"
+#include "base/files/file_util.h"
+#include "content/public/browser/tracing_controller.h"
+#include "native_mate/dictionary.h"
 
 using content::TracingController;
 
 namespace mate {
 
-template<typename T>
-struct Converter<std::set<T> > {
-  static v8::Handle<v8::Value> ToV8(v8::Isolate* isolate,
-                                    const std::set<T>& val) {
-    v8::Handle<v8::Array> result = v8::Array::New(
-        isolate, static_cast<int>(val.size()));
-    typename std::set<T>::const_iterator it;
-    int i;
-    for (i = 0, it = val.begin(); it != val.end(); ++it, ++i)
-      result->Set(i, Converter<T>::ToV8(isolate, *it));
-    return result;
-  }
-};
-
 template<>
-struct Converter<base::debug::CategoryFilter> {
+struct Converter<base::trace_event::TraceConfig> {
   static bool FromV8(v8::Isolate* isolate,
-                     v8::Handle<v8::Value> val,
-                     base::debug::CategoryFilter* out) {
-    std::string filter;
-    if (!ConvertFromV8(isolate, val, &filter))
-      return false;
-    *out = base::debug::CategoryFilter(filter);
-    return true;
-  }
-};
-
-template<>
-struct Converter<base::debug::TraceOptions> {
-  static bool FromV8(v8::Isolate* isolate,
-                     v8::Handle<v8::Value> val,
-                     base::debug::TraceOptions* out) {
-    std::string options;
+                     v8::Local<v8::Value> val,
+                     base::trace_event::TraceConfig* out) {
+    Dictionary options;
     if (!ConvertFromV8(isolate, val, &options))
       return false;
-    return out->SetFromString(options);
+    std::string category_filter, trace_options;
+    if (!options.Get("categoryFilter", &category_filter) ||
+        !options.Get("traceOptions", &trace_options))
+      return false;
+    *out = base::trace_event::TraceConfig(category_filter, trace_options);
+    return true;
   }
 };
 
@@ -60,33 +38,40 @@ struct Converter<base::debug::TraceOptions> {
 
 namespace {
 
-void Initialize(v8::Handle<v8::Object> exports, v8::Handle<v8::Value> unused,
-                v8::Handle<v8::Context> context, void* priv) {
-  TracingController* controller = TracingController::GetInstance();
+using CompletionCallback = base::Callback<void(const base::FilePath&)>;
+
+scoped_refptr<TracingController::TraceDataSink> GetTraceDataSink(
+    const base::FilePath& path, const CompletionCallback& callback) {
+  base::FilePath result_file_path = path;
+  if (result_file_path.empty() && !base::CreateTemporaryFile(&result_file_path))
+    LOG(ERROR) << "Creating temporary file failed";
+
+  return TracingController::CreateFileSink(result_file_path,
+                                           base::Bind(callback,
+                                                      result_file_path));
+}
+
+void StopRecording(const base::FilePath& path,
+                   const CompletionCallback& callback) {
+  TracingController::GetInstance()->StopTracing(
+      GetTraceDataSink(path, callback));
+}
+
+void Initialize(v8::Local<v8::Object> exports, v8::Local<v8::Value> unused,
+                v8::Local<v8::Context> context, void* priv) {
+  auto controller = base::Unretained(TracingController::GetInstance());
   mate::Dictionary dict(context->GetIsolate(), exports);
   dict.SetMethod("getCategories", base::Bind(
-      &TracingController::GetCategories, base::Unretained(controller)));
+      &TracingController::GetCategories, controller));
   dict.SetMethod("startRecording", base::Bind(
-      &TracingController::EnableRecording, base::Unretained(controller)));
-  dict.SetMethod("stopRecording", base::Bind(
-      &TracingController::DisableRecording,
-      base::Unretained(controller),
-      nullptr));
-  dict.SetMethod("startMonitoring", base::Bind(
-      &TracingController::EnableMonitoring, base::Unretained(controller)));
-  dict.SetMethod("stopMonitoring", base::Bind(
-      &TracingController::DisableMonitoring, base::Unretained(controller)));
-  dict.SetMethod("captureMonitoringSnapshot", base::Bind(
-      &TracingController::CaptureMonitoringSnapshot,
-      base::Unretained(controller),
-      nullptr));
-  dict.SetMethod("getTraceBufferPercentFull", base::Bind(
-      &TracingController::GetTraceBufferPercentFull,
-      base::Unretained(controller)));
+      &TracingController::StartTracing, controller));
+  dict.SetMethod("stopRecording", &StopRecording);
+  dict.SetMethod("getTraceBufferUsage", base::Bind(
+      &TracingController::GetTraceBufferUsage, controller));
   dict.SetMethod("setWatchEvent", base::Bind(
-      &TracingController::SetWatchEvent, base::Unretained(controller)));
+      &TracingController::SetWatchEvent, controller));
   dict.SetMethod("cancelWatchEvent", base::Bind(
-      &TracingController::CancelWatchEvent, base::Unretained(controller)));
+      &TracingController::CancelWatchEvent, controller));
 }
 
 }  // namespace

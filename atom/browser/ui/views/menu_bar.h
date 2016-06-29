@@ -57,10 +57,14 @@ class MenuBar : public views::View,
   void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::MenuButtonListener:
-  void OnMenuButtonClicked(views::View* source,
-                                   const gfx::Point& point) override;
+  void OnMenuButtonClicked(views::MenuButton* source,
+                           const gfx::Point& point,
+                           const ui::Event* event) override;
+  void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
  private:
+  void UpdateMenuBarColor();
+
   SkColor background_color_;
 
 #if defined(USE_X11)
@@ -71,7 +75,6 @@ class MenuBar : public views::View,
 #endif
 
   ui::MenuModel* menu_model_;
-  scoped_ptr<MenuDelegate> menu_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuBar);
 };

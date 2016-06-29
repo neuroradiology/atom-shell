@@ -1,127 +1,213 @@
-# tray
+# Tray
 
-A `Tray` represents an icon in operating system's notification area, it is
-usually attached with a context menu.
+> Add icons and context menus to the system's notification area.
 
 ```javascript
-var app = require('app');
-var Menu = require('menu');
-var Tray = require('tray');
+const {app, Menu, Tray} = require('electron')
 
-var appIcon = null;
-app.on('ready', function(){
-  appIcon = new Tray('/path/to/my/icon');
-  var contextMenu = Menu.buildFromTemplate([
-    { label: 'Item1', type: 'radio' },
-    { label: 'Item2', type: 'radio' },
-    { label: 'Item3', type: 'radio', checked: true },
-    { label: 'Item4', type: 'radio' },
+let tray = null
+app.on('ready', () => {
+  tray = new Tray('/path/to/my/icon')
+  const contextMenu = Menu.buildFromTemplate([
+    {label: 'Item1', type: 'radio'},
+    {label: 'Item2', type: 'radio'},
+    {label: 'Item3', type: 'radio', checked: true},
+    {label: 'Item4', type: 'radio'}
   ]);
-  appIcon.setToolTip('This is my application.');
-  appIcon.setContextMenu(contextMenu);
-});
-
+  tray.setToolTip('This is my application.')
+  tray.setContextMenu(contextMenu)
+})
 ```
 
 __Platform limitations:__
 
-* On OS X `clicked` event will be ignored if the tray icon has context menu.
-* On Linux app indicator will be used if it is supported, otherwise
+* On Linux the app indicator will be used if it is supported, otherwise
   `GtkStatusIcon` will be used instead.
-* App indicator will only be showed when it has context menu.
-* When app indicator is used on Linux, `clicked` event is ignored.
+* On Linux distributions that only have app indicator support, you have to
+  install `libappindicator1` to make the tray icon work.
+* App indicator will only be shown when it has a context menu.
+* When app indicator is used on Linux, the `click` event is ignored.
+* On Linux in order for changes made to individual `MenuItem`s to take effect,
+  you have to call `setContextMenu` again. For example:
 
-So if you want to keep exact same behaviors on all platforms, you should not
-rely on `clicked` event and always attach a context menu to the tray icon.
+```javascript
+contextMenu.items[2].checked = false;
+appIcon.setContextMenu(contextMenu);
+```
+* On Windows it is recommended to use `ICO` icons to get best visual effects.
+
+If you want to keep exact same behaviors on all platforms, you should not
+rely on the `click` event and always attach a context menu to the tray icon.
 
 ## Class: Tray
 
 `Tray` is an [EventEmitter][event-emitter].
 
-### new Tray(image)
+### `new Tray(image)`
 
-* `image` [Image](image.md)
+* `image` [NativeImage](native-image.md)
 
 Creates a new tray icon associated with the `image`.
 
-### Event: 'clicked'
+### Instance Events
+
+The `Tray` module emits the following events:
+
+#### Event: 'click'
+
+* `event` Event
+  * `altKey` Boolean
+  * `shiftKey` Boolean
+  * `ctrlKey` Boolean
+  * `metaKey` Boolean
+* `bounds` Object _macOS_ _Windows_ - the bounds of tray icon.
+  * `x` Integer
+  * `y` Integer
+  * `width` Integer
+  * `height` Integer
 
 Emitted when the tray icon is clicked.
 
-### Event: 'double-clicked'
+#### Event: 'right-click' _macOS_ _Windows_
+
+* `event` Event
+  * `altKey` Boolean
+  * `shiftKey` Boolean
+  * `ctrlKey` Boolean
+  * `metaKey` Boolean
+* `bounds` Object - the bounds of tray icon.
+  * `x` Integer
+  * `y` Integer
+  * `width` Integer
+  * `height` Integer
+
+Emitted when the tray icon is right clicked.
+
+#### Event: 'double-click' _macOS_ _Windows_
+
+* `event` Event
+  * `altKey` Boolean
+  * `shiftKey` Boolean
+  * `ctrlKey` Boolean
+  * `metaKey` Boolean
+* `bounds` Object - the bounds of tray icon
+  * `x` Integer
+  * `y` Integer
+  * `width` Integer
+  * `height` Integer
 
 Emitted when the tray icon is double clicked.
 
-__Note:__ This is only implemented on OS X.
-
-### Event: 'balloon-show'
+#### Event: 'balloon-show' _Windows_
 
 Emitted when the tray balloon shows.
 
-__Note:__ This is only implemented on Windows.
-
-### Event: 'balloon-clicked'
+#### Event: 'balloon-click' _Windows_
 
 Emitted when the tray balloon is clicked.
 
-__Note:__ This is only implemented on Windows.
-
-### Event: 'balloon-closed'
+#### Event: 'balloon-closed' _Windows_
 
 Emitted when the tray balloon is closed because of timeout or user manually
 closes it.
 
-__Note:__ This is only implemented on Windows.
+#### Event: 'drop' _macOS_
 
-### Tray.destroy()
+Emitted when any dragged items are dropped on the tray icon.
+
+#### Event: 'drop-files' _macOS_
+
+* `event` Event
+* `files` Array - the file path of dropped files.
+
+Emitted when dragged files are dropped in the tray icon.
+
+#### Event: 'drag-enter' _macOS_
+
+Emitted when a drag operation enters the tray icon.
+
+#### Event: 'drag-leave' _macOS_
+
+Emitted when a drag operation exits the tray icon.
+
+#### Event: 'drag-end' _macOS_
+
+Emitted when a drag operation ends on the tray or ends at another location.
+
+### Instance Methods
+
+The `Tray` class has the following methods:
+
+#### `tray.destroy()`
 
 Destroys the tray icon immediately.
 
-### Tray.setImage(image)
+#### `tray.setImage(image)`
 
-* `image` [Image](image.md)
+* `image` [NativeImage](native-image.md)
 
 Sets the `image` associated with this tray icon.
 
-### Tray.setPressedImage(image)
+#### `tray.setPressedImage(image)` _macOS_
 
-* `image` [Image](image.md)
+* `image` [NativeImage](native-image.md)
 
-Sets the `image` associated with this tray icon when pressed.
+Sets the `image` associated with this tray icon when pressed on macOS.
 
-### Tray.setToolTip(toolTip)
+#### `tray.setToolTip(toolTip)`
 
 * `toolTip` String
 
 Sets the hover text for this tray icon.
 
-### Tray.setTitle(title)
+#### `tray.setTitle(title)` _macOS_
 
 * `title` String
 
 Sets the title displayed aside of the tray icon in the status bar.
 
-This is only implmented on OS X.
-
-### Tray.setHighlightMode(highlight)
+#### `tray.setHighlightMode(highlight)` _macOS_
 
 * `highlight` Boolean
 
-Sets whether the tray icon is highlighted when it is clicked.
+Sets whether the tray icon's background becomes highlighted (in blue)
+when the tray icon is clicked. Defaults to true.
 
-This is only implmented on OS X.
-
-### Tray.displayBalloon(options)
+#### `tray.displayBalloon(options)` _Windows_
 
 * `options` Object
-  * `icon` [Image](image.md)
+  * `icon` [NativeImage](native-image.md)
   * `title` String
   * `content` String
 
-### Tray.setContextMenu(menu)
+Displays a tray balloon.
+
+#### `tray.popUpContextMenu([menu, position])` _macOS_ _Windows_
+
+* `menu` Menu (optional)
+* `position` Object (optional) - The pop up position.
+  * `x` Integer
+  * `y` Integer
+
+Pops up the context menu of the tray icon. When `menu` is passed, the `menu` will
+be shown instead of the tray icon's context menu.
+
+The `position` is only available on Windows, and it is (0, 0) by default.
+
+#### `tray.setContextMenu(menu)`
 
 * `menu` Menu
 
-Set the context menu for this icon.
+Sets the context menu for this icon.
+
+#### `tray.getBounds()` _macOS_ _Windows_
+
+Returns the `bounds` of this tray icon as `Object`.
+
+* `bounds` Object
+  * `x` Integer
+  * `y` Integer
+  * `width` Integer
+  * `height` Integer
 
 [event-emitter]: http://nodejs.org/api/events.html#events_class_events_eventemitter

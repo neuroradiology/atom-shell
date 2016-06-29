@@ -5,12 +5,11 @@
 #include "atom/common/api/api_messages.h"
 #include "atom/common/native_mate_converters/string16_converter.h"
 #include "atom/common/native_mate_converters/value_converter.h"
+#include "atom/common/node_includes.h"
 #include "content/public/renderer/render_view.h"
 #include "native_mate/dictionary.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
-
-#include "atom/common/node_includes.h"
 
 using content::RenderView;
 using blink::WebLocalFrame;
@@ -30,7 +29,9 @@ RenderView* GetCurrentRenderView() {
   return RenderView::FromWebView(view);
 }
 
-void Send(const base::string16& channel, const base::ListValue& arguments) {
+void Send(mate::Arguments* args,
+          const base::string16& channel,
+          const base::ListValue& arguments) {
   RenderView* render_view = GetCurrentRenderView();
   if (render_view == NULL)
     return;
@@ -39,10 +40,11 @@ void Send(const base::string16& channel, const base::ListValue& arguments) {
       render_view->GetRoutingID(), channel, arguments));
 
   if (!success)
-    node::ThrowError("Unable to send AtomViewHostMsg_Message");
+    args->ThrowError("Unable to send AtomViewHostMsg_Message");
 }
 
-base::string16 SendSync(const base::string16& channel,
+base::string16 SendSync(mate::Arguments* args,
+                        const base::string16& channel,
                         const base::ListValue& arguments) {
   base::string16 json;
 
@@ -52,18 +54,16 @@ base::string16 SendSync(const base::string16& channel,
 
   IPC::SyncMessage* message = new AtomViewHostMsg_Message_Sync(
       render_view->GetRoutingID(), channel, arguments, &json);
-  // Enable the UI thread in browser to receive messages.
-  message->EnableMessagePumping();
   bool success = render_view->Send(message);
 
   if (!success)
-    node::ThrowError("Unable to send AtomViewHostMsg_Message_Sync");
+    args->ThrowError("Unable to send AtomViewHostMsg_Message_Sync");
 
   return json;
 }
 
-void Initialize(v8::Handle<v8::Object> exports, v8::Handle<v8::Value> unused,
-                v8::Handle<v8::Context> context, void* priv) {
+void Initialize(v8::Local<v8::Object> exports, v8::Local<v8::Value> unused,
+                v8::Local<v8::Context> context, void* priv) {
   mate::Dictionary dict(context->GetIsolate(), exports);
   dict.SetMethod("send", &Send);
   dict.SetMethod("sendSync", &SendSync);

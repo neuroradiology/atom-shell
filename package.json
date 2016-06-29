@@ -1,23 +1,34 @@
 {
-  "name": "atom-shell",
-  "version": "0.20.2",
-
-  "licenses": [
-    {
-      "type": "MIT",
-      "url": "http://github.com/atom/atom-shell/raw/master/LICENSE.md"
-    }
-  ],
-
+  "name": "electron",
+  "version": "1.2.5",
   "devDependencies": {
-    "atom-package-manager": "0.112.0",
-    "coffee-script": "~1.7.1",
-    "coffeelint": "~1.3.0"
+    "asar": "^0.11.0",
+    "request": "*",
+    "standard": "^7.1.2"
   },
-
+  "optionalDependencies": {
+    "runas": "^3.0.0"
+  },
+  "standard": {
+    "ignore": [
+      "/out",
+      "/spec",
+      "/vendor"
+    ],
+    "env": {
+      "browser": true
+    }
+  },
   "private": true,
-
   "scripts": {
-    "preinstall": "node -e 'process.exit(0)'"
+    "bootstrap": "python ./script/bootstrap.py",
+    "build": "python ./script/build.py -c D",
+    "lint": "npm run lint-js && npm run lint-cpp",
+    "lint-js": "standard && cd spec && standard",
+    "lint-cpp": "python ./script/cpplint.py",
+    "preinstall": "node -e 'process.exit(0)'",
+    "repl": "python ./script/start.py --interactive",
+    "start": "python ./script/start.py",
+    "test": "python ./script/test.py"
   }
 }
