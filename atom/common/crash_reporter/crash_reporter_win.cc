@@ -138,7 +138,8 @@ void UnregisterNonABICompliantCodeRange(void* start) {
 }  // namespace
 
 CrashReporterWin::CrashReporterWin()
-    : skip_system_crash_handler_(false) {
+    : skip_system_crash_handler_(false),
+      code_range_registered_(false) {
 }
 
 CrashReporterWin::~CrashReporterWin() {
@@ -148,15 +149,10 @@ void CrashReporterWin::InitBreakpad(const std::string& product_name,
                                     const std::string& version,
                                     const std::string& company_name,
                                     const std::string& submit_url,
-                                    bool auto_submit,
+                                    const base::FilePath& crashes_dir,
+                                    bool upload_to_server,
                                     bool skip_system_crash_handler) {
   skip_system_crash_handler_ = skip_system_crash_handler;
-
-  base::FilePath temp_dir;
-  if (!base::GetTempDir(&temp_dir)) {
-    LOG(ERROR) << "Cannot get temp directory";
-    return;
-  }
 
   base::string16 pipe_name = base::ReplaceStringPlaceholders(
       kPipeNameFormat, base::UTF8ToUTF16(product_name), NULL);
@@ -176,32 +172,33 @@ void CrashReporterWin::InitBreakpad(const std::string& product_name,
   breakpad_.reset();
 
   breakpad_.reset(new google_breakpad::ExceptionHandler(
-      temp_dir.value(),
+      crashes_dir.DirName().value(),
       FilterCallback,
       MinidumpCallback,
       this,
       google_breakpad::ExceptionHandler::HANDLER_ALL,
       kSmallDumpType,
       pipe_name.c_str(),
-      GetCustomInfo(product_name, version, company_name)));
+      GetCustomInfo(product_name, version, company_name, upload_to_server)));
 
   if (!breakpad_->IsOutOfProcess())
     LOG(ERROR) << "Cannot initialize out-of-process crash handler";
 
 #ifdef _WIN64
-  bool registered = false;
   // Hook up V8 to breakpad.
-  {
+  if (!code_range_registered_) {
+    code_range_registered_ = true;
     // gin::Debug::SetCodeRangeCreatedCallback only runs the callback when
     // Isolate is just created, so we have to manually run following code here.
     void* code_range = nullptr;
     size_t size = 0;
     v8::Isolate::GetCurrent()->GetCodeRange(&code_range, &size);
-    if (code_range && size)
-      registered = RegisterNonABICompliantCodeRange(code_range, size);
+    if (code_range && size &&
+        RegisterNonABICompliantCodeRange(code_range, size)) {
+      gin::Debug::SetCodeRangeDeletedCallback(
+          UnregisterNonABICompliantCodeRange);
+    }
   }
-  if (registered)
-    gin::Debug::SetCodeRangeDeletedCallback(UnregisterNonABICompliantCodeRange);
 #endif
 }
 
@@ -241,14 +238,19 @@ bool CrashReporterWin::MinidumpCallback(const wchar_t* dump_path,
 google_breakpad::CustomClientInfo* CrashReporterWin::GetCustomInfo(
     const std::string& product_name,
     const std::string& version,
-    const std::string& company_name) {
+    const std::string& company_name,
+    bool upload_to_server) {
   custom_info_entries_.clear();
-  custom_info_entries_.reserve(2 + upload_parameters_.size());
+  custom_info_entries_.reserve(3 + upload_parameters_.size());
 
   custom_info_entries_.push_back(google_breakpad::CustomInfoEntry(
       L"prod", L"Electron"));
   custom_info_entries_.push_back(google_breakpad::CustomInfoEntry(
       L"ver", base::UTF8ToWide(version).c_str()));
+  if (!upload_to_server) {
+    custom_info_entries_.push_back(google_breakpad::CustomInfoEntry(
+        L"skip_upload", L"1"));
+  }
 
   for (StringMap::const_iterator iter = upload_parameters_.begin();
        iter != upload_parameters_.end(); ++iter) {

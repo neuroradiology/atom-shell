@@ -10,10 +10,12 @@
 #ifndef CHROME_BROWSER_BROWSER_PROCESS_H_
 #define CHROME_BROWSER_BROWSER_PROCESS_H_
 
+#include <memory>
 #include <string>
 
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
+
+class IconManager;
 
 namespace printing {
 class PrintJobManager;
@@ -27,11 +29,13 @@ class BrowserProcess {
   ~BrowserProcess();
 
   std::string GetApplicationLocale();
+  IconManager* GetIconManager();
 
   printing::PrintJobManager* print_job_manager();
 
  private:
   std::unique_ptr<printing::PrintJobManager> print_job_manager_;
+  std::unique_ptr<IconManager> icon_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserProcess);
 };

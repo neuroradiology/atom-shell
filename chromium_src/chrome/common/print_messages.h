@@ -40,18 +40,22 @@ struct PrintMsg_Print_Params {
   int margin_top;
   int margin_left;
   double dpi;
-  double min_shrink;
-  double max_shrink;
+  double scale_factor;
   int desired_dpi;
+  bool rasterize_pdf;
   int document_cookie;
   bool selection_only;
   bool supports_alpha_blend;
+  int32_t preview_ui_id;
   int preview_request_id;
+  bool is_first_request;
   blink::WebPrintScalingOption print_scaling_option;
   bool print_to_pdf;
+  bool display_header_footer;
   base::string16 title;
   base::string16 url;
   bool should_print_backgrounds;
+  base::string16 device_name;
 };
 
 struct PrintMsg_PrintPages_Params {
@@ -71,6 +75,9 @@ struct PrintMsg_PrintPages_Params {
 
 IPC_ENUM_TRAITS_MAX_VALUE(printing::MarginType,
                           printing::MARGIN_TYPE_LAST)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(printing::DuplexMode,
+                              printing::UNKNOWN_DUPLEX_MODE,
+                              printing::SHORT_EDGE)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebPrintScalingOption,
                           blink::WebPrintScalingOptionLast)
 
@@ -95,11 +102,8 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
   // Specifies dots per inch.
   IPC_STRUCT_TRAITS_MEMBER(dpi)
 
-  // Minimum shrink factor. See PrintSettings::min_shrink for more information.
-  IPC_STRUCT_TRAITS_MEMBER(min_shrink)
-
-  // Maximum shrink factor. See PrintSettings::max_shrink for more information.
-  IPC_STRUCT_TRAITS_MEMBER(max_shrink)
+  // Specifies the scale factor in percent
+  IPC_STRUCT_TRAITS_MEMBER(scale_factor)
 
   // Desired apparent dpi on paper.
   IPC_STRUCT_TRAITS_MEMBER(desired_dpi)
@@ -113,8 +117,25 @@ IPC_STRUCT_TRAITS_BEGIN(PrintMsg_Print_Params)
   // Does the printer support alpha blending?
   IPC_STRUCT_TRAITS_MEMBER(supports_alpha_blend)
 
+  // *** Parameters below are used only for print preview. ***
+
+  // The print preview ui associated with this request.
+  IPC_STRUCT_TRAITS_MEMBER(preview_ui_id)
+
+  // The id of the preview request.
+  IPC_STRUCT_TRAITS_MEMBER(preview_request_id)
+
+  // True if this is the first preview request.
+  IPC_STRUCT_TRAITS_MEMBER(is_first_request)
+
   // Specifies the page scaling option for preview printing.
   IPC_STRUCT_TRAITS_MEMBER(print_scaling_option)
+
+  // True if print to pdf is requested.
+  IPC_STRUCT_TRAITS_MEMBER(print_to_pdf)
+
+  // Specifies if the header and footer should be rendered.
+  IPC_STRUCT_TRAITS_MEMBER(display_header_footer)
 
   // Title string to be printed as header if requested by the user.
   IPC_STRUCT_TRAITS_MEMBER(title)
@@ -213,9 +234,10 @@ IPC_STRUCT_END()
 
 // Tells the render view to switch the CSS to print media type, renders every
 // requested pages and switch back the CSS to display media type.
-IPC_MESSAGE_ROUTED2(PrintMsg_PrintPages,
+IPC_MESSAGE_ROUTED3(PrintMsg_PrintPages,
                     bool /* silent print */,
-                    bool /* print page's background */)
+                    bool /* print page's background */,
+                    base::string16 /* device name*/)
 
 // Tells the render view that printing is done so it can clean up.
 IPC_MESSAGE_ROUTED1(PrintMsg_PrintingDone,
@@ -260,6 +282,11 @@ IPC_MESSAGE_ROUTED1(PrintHostMsg_DidPrintPage,
 IPC_SYNC_MESSAGE_ROUTED0_1(PrintHostMsg_GetDefaultPrintSettings,
                            PrintMsg_Print_Params /* default_settings */)
 
+// you can set the printer
+IPC_SYNC_MESSAGE_ROUTED1_1(PrintHostMsg_InitSettingWithDeviceName,
+    base::string16, /* device name */
+    PrintMsg_Print_Params /* default_settings */)
+
 // The renderer wants to update the current print settings with new
 // |job_settings|.
 IPC_SYNC_MESSAGE_ROUTED2_2(PrintHostMsg_UpdatePrintSettings,
@@ -293,30 +320,3 @@ IPC_MESSAGE_ROUTED1(PrintHostMsg_MetafileReadyForPrinting,
 IPC_MESSAGE_ROUTED2(PrintHostMsg_PrintPreviewFailed,
                     int /* document cookie */,
                     int /* request_id */);
-
-#if defined(OS_WIN)
-// Tell the utility process to start rendering the given PDF into a metafile.
-// Utility process would be alive until
-// ChromeUtilityMsg_RenderPDFPagesToMetafiles_Stop message.
-IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_RenderPDFPagesToMetafiles,
-                     IPC::PlatformFileForTransit, /* input_file */
-                     printing::PdfRenderSettings /* settings */)
-
-// Requests conversion of the next page.
-IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_RenderPDFPagesToMetafiles_GetPage,
-                     int /* page_number */,
-                     IPC::PlatformFileForTransit /* output_file */)
-
-// Requests utility process to stop conversion and exit.
-IPC_MESSAGE_CONTROL0(ChromeUtilityMsg_RenderPDFPagesToMetafiles_Stop)
-
-// Reply when the utility process loaded PDF. |page_count| is 0, if loading
-// failed.
-IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_RenderPDFPagesToMetafiles_PageCount,
-                     int /* page_count */)
-
-// Reply when the utility process rendered the PDF page.
-IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_RenderPDFPagesToMetafiles_PageDone,
-                     bool /* success */,
-                     float /* scale_factor */)
-#endif

@@ -4,6 +4,7 @@
 
 #include "atom/browser/api/atom_api_cookies.h"
 
+#include "atom/browser/atom_browser_context.h"
 #include "atom/common/native_mate_converters/callback.h"
 #include "atom/common/native_mate_converters/gurl_converter.h"
 #include "atom/common/native_mate_converters/value_converter.h"
@@ -19,6 +20,7 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
+using atom::AtomCookieDelegate;
 using content::BrowserThread;
 
 namespace mate {
@@ -50,6 +52,32 @@ struct Converter<net::CanonicalCookie> {
     if (val.IsPersistent())
       dict.Set("expirationDate", val.ExpiryDate().ToDoubleT());
     return dict.GetHandle();
+  }
+};
+
+template<>
+struct Converter<net::CookieStore::ChangeCause> {
+  static v8::Local<v8::Value> ToV8(v8::Isolate* isolate,
+                                   const net::CookieStore::ChangeCause& val) {
+    switch (val) {
+      case net::CookieStore::ChangeCause::INSERTED:
+      case net::CookieStore::ChangeCause::EXPLICIT:
+      case net::CookieStore::ChangeCause::EXPLICIT_DELETE_BETWEEN:
+      case net::CookieStore::ChangeCause::EXPLICIT_DELETE_PREDICATE:
+      case net::CookieStore::ChangeCause::EXPLICIT_DELETE_SINGLE:
+      case net::CookieStore::ChangeCause::EXPLICIT_DELETE_CANONICAL:
+        return mate::StringToV8(isolate, "explicit");
+      case net::CookieStore::ChangeCause::OVERWRITE:
+        return mate::StringToV8(isolate, "overwrite");
+      case net::CookieStore::ChangeCause::EXPIRED:
+        return mate::StringToV8(isolate, "expired");
+      case net::CookieStore::ChangeCause::EVICTED:
+        return mate::StringToV8(isolate, "evicted");
+      case net::CookieStore::ChangeCause::EXPIRED_OVERWRITE:
+        return mate::StringToV8(isolate, "expired-overwrite");
+      default:
+        return mate::StringToV8(isolate, "unknown");
+    }
   }
 };
 
@@ -155,6 +183,13 @@ void OnSetCookie(const Cookies::SetCallback& callback, bool success) {
       base::Bind(callback, success ? Cookies::SUCCESS : Cookies::FAILED));
 }
 
+// Flushes cookie store in IO thread.
+void FlushCookieStoreOnIOThread(
+    scoped_refptr<net::URLRequestContextGetter> getter,
+    const base::Closure& callback) {
+  GetCookieStore(getter)->FlushStore(base::Bind(RunCallbackInUI, callback));
+}
+
 // Sets cookie with |details| in IO thread.
 void SetCookieOnIO(scoped_refptr<net::URLRequestContextGetter> getter,
                    std::unique_ptr<base::DictionaryValue> details,
@@ -197,19 +232,22 @@ void SetCookieOnIO(scoped_refptr<net::URLRequestContextGetter> getter,
   GetCookieStore(getter)->SetCookieWithDetailsAsync(
       GURL(url), name, value, domain, path, creation_time,
       expiration_time, last_access_time, secure, http_only,
-      net::CookieSameSite::DEFAULT_MODE, false,
-      net::COOKIE_PRIORITY_DEFAULT, base::Bind(OnSetCookie, callback));
+      net::CookieSameSite::DEFAULT_MODE, net::COOKIE_PRIORITY_DEFAULT,
+      base::Bind(OnSetCookie, callback));
 }
 
 }  // namespace
 
 Cookies::Cookies(v8::Isolate* isolate,
-                 content::BrowserContext* browser_context)
-      : request_context_getter_(browser_context->GetRequestContext()) {
+                 AtomBrowserContext* browser_context)
+      : request_context_getter_(browser_context->url_request_context_getter()),
+        cookie_delegate_(browser_context->cookie_delegate()) {
   Init(isolate);
+  cookie_delegate_->AddObserver(this);
 }
 
 Cookies::~Cookies() {
+  cookie_delegate_->RemoveObserver(this);
 }
 
 void Cookies::Get(const base::DictionaryValue& filter,
@@ -238,20 +276,36 @@ void Cookies::Set(const base::DictionaryValue& details,
       base::Bind(SetCookieOnIO, getter, Passed(&copied), callback));
 }
 
+void Cookies::FlushStore(const base::Closure& callback) {
+  auto getter = make_scoped_refptr(request_context_getter_);
+  content::BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(FlushCookieStoreOnIOThread, getter, callback));
+}
+
+void Cookies::OnCookieChanged(const net::CanonicalCookie& cookie,
+                              bool removed,
+                              net::CookieStore::ChangeCause cause) {
+  Emit("changed", cookie, cause, removed);
+}
+
+
 // static
 mate::Handle<Cookies> Cookies::Create(
     v8::Isolate* isolate,
-    content::BrowserContext* browser_context) {
+    AtomBrowserContext* browser_context) {
   return mate::CreateHandle(isolate, new Cookies(isolate, browser_context));
 }
 
 // static
 void Cookies::BuildPrototype(v8::Isolate* isolate,
-                             v8::Local<v8::ObjectTemplate> prototype) {
-  mate::ObjectTemplateBuilder(isolate, prototype)
+                             v8::Local<v8::FunctionTemplate> prototype) {
+  prototype->SetClassName(mate::StringToV8(isolate, "Cookies"));
+  mate::ObjectTemplateBuilder(isolate, prototype->PrototypeTemplate())
       .SetMethod("get", &Cookies::Get)
       .SetMethod("remove", &Cookies::Remove)
-      .SetMethod("set", &Cookies::Set);
+      .SetMethod("set", &Cookies::Set)
+      .SetMethod("flushStore", &Cookies::FlushStore);
 }
 
 }  // namespace api

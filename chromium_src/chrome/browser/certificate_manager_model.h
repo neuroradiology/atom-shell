@@ -6,12 +6,12 @@
 #define CHROME_BROWSER_CERTIFICATE_MANAGER_MODEL_H_
 
 #include <map>
+#include <memory>
 #include <string>
 
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "net/cert/nss_cert_database.h"
 
@@ -44,7 +44,7 @@ class CertificateManagerModel {
   // |data|, using the given |password|. If |is_extractable| is false,
   // mark the private key as unextractable from the module.
   // Returns a net error code on failure.
-  int ImportFromPKCS12(net::CryptoModule* module,
+  int ImportFromPKCS12(PK11SlotInfo* slot_info,
                        const std::string& data,
                        const base::string16& password,
                        bool is_extractable,

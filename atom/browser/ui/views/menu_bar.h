@@ -5,13 +5,10 @@
 #ifndef ATOM_BROWSER_UI_VIEWS_MENU_BAR_H_
 #define ATOM_BROWSER_UI_VIEWS_MENU_BAR_H_
 
-#include "ui/views/controls/button/button.h"
+#include "atom/browser/native_window.h"
+#include "atom/browser/ui/atom_menu_model.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/view.h"
-
-namespace ui {
-class MenuModel;
-}
 
 namespace views {
 class MenuButton;
@@ -22,14 +19,13 @@ namespace atom {
 class MenuDelegate;
 
 class MenuBar : public views::View,
-                public views::ButtonListener,
                 public views::MenuButtonListener {
  public:
-  MenuBar();
+  explicit MenuBar(NativeWindow* window);
   virtual ~MenuBar();
 
   // Replaces current menu with a new one.
-  void SetMenu(ui::MenuModel* menu_model);
+  void SetMenu(AtomMenuModel* menu_model);
 
   // Shows underline under accelerators.
   void SetAcceleratorVisibility(bool visible);
@@ -46,15 +42,12 @@ class MenuBar : public views::View,
 
   // Get the menu under specified screen point.
   bool GetMenuButtonFromScreenPoint(const gfx::Point& point,
-                                    ui::MenuModel** menu_model,
+                                    AtomMenuModel** menu_model,
                                     views::MenuButton** button);
 
  protected:
   // views::View:
   const char* GetClassName() const override;
-
-  // views::ButtonListener:
-  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // views::MenuButtonListener:
   void OnMenuButtonClicked(views::MenuButton* source,
@@ -74,7 +67,8 @@ class MenuBar : public views::View,
   SkColor hover_color_;
 #endif
 
-  ui::MenuModel* menu_model_;
+  NativeWindow* window_;
+  AtomMenuModel* menu_model_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuBar);
 };

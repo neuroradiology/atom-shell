@@ -5,12 +5,12 @@
 #ifndef ATOM_COMMON_CRASH_REPORTER_CRASH_REPORTER_LINUX_H_
 #define ATOM_COMMON_CRASH_REPORTER_CRASH_REPORTER_LINUX_H_
 
+#include <memory>
 #include <string>
 
 #include "atom/common/crash_reporter/crash_reporter.h"
 #include "atom/common/crash_reporter/linux/crash_dump_handler.h"
 #include "base/compiler_specific.h"
-#include "base/memory/scoped_ptr.h"
 
 namespace base {
 template <typename T> struct DefaultSingletonTraits;
@@ -31,9 +31,12 @@ class CrashReporterLinux : public CrashReporter {
                     const std::string& version,
                     const std::string& company_name,
                     const std::string& submit_url,
-                    bool auto_submit,
+                    const base::FilePath& crashes_dir,
+                    bool upload_to_server,
                     bool skip_system_crash_handler) override;
+  void SetUploadToServer(bool upload_to_server) override;
   void SetUploadParameters() override;
+  bool GetUploadToServer() override;
 
  private:
   friend struct base::DefaultSingletonTraits<CrashReporterLinux>;
@@ -41,18 +44,19 @@ class CrashReporterLinux : public CrashReporter {
   CrashReporterLinux();
   virtual ~CrashReporterLinux();
 
-  void EnableCrashDumping(const std::string& product_name);
+  void EnableCrashDumping(const base::FilePath& crashes_dir);
 
   static bool CrashDone(const google_breakpad::MinidumpDescriptor& minidump,
                         void* context,
                         const bool succeeded);
 
   std::unique_ptr<google_breakpad::ExceptionHandler> breakpad_;
-  CrashKeyStorage crash_keys_;
+  std::unique_ptr<CrashKeyStorage> crash_keys_;
 
   uint64_t process_start_time_;
   pid_t pid_;
   std::string upload_url_;
+  bool upload_to_server_;
 
   DISALLOW_COPY_AND_ASSIGN(CrashReporterLinux);
 };

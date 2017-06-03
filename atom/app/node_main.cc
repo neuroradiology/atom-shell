@@ -6,14 +6,18 @@
 
 #include "atom/app/uv_task_runner.h"
 #include "atom/browser/javascript_environment.h"
-#include "atom/browser/node_debugger.h"
-#include "atom/common/node_includes.h"
+#include "atom/common/api/atom_bindings.h"
+#include "atom/common/crash_reporter/crash_reporter.h"
+#include "atom/common/native_mate_converters/string16_converter.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
-#include "base/thread_task_runner_handle.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "gin/array_buffer.h"
 #include "gin/public/isolate_holder.h"
 #include "gin/v8_initializer.h"
+#include "native_mate/dictionary.h"
+
+#include "atom/common/node_includes.h"
 
 namespace atom {
 
@@ -41,14 +45,21 @@ int NodeMain(int argc, char *argv[]) {
     const char** exec_argv;
     node::Init(&argc, const_cast<const char**>(argv), &exec_argc, &exec_argv);
 
+    node::IsolateData isolate_data(gin_env.isolate(), loop);
     node::Environment* env = node::CreateEnvironment(
-        gin_env.isolate(), loop, gin_env.context(), argc, argv,
+        &isolate_data, gin_env.context(), argc, argv,
         exec_argc, exec_argv);
 
-    // Start our custom debugger implementation.
-    NodeDebugger node_debugger(gin_env.isolate());
-    if (node_debugger.IsRunning())
-      env->AssignToContext(v8::Debug::GetDebugContext());
+    mate::Dictionary process(gin_env.isolate(), env->process_object());
+#if defined(OS_WIN)
+    process.SetMethod("log", &AtomBindings::Log);
+#endif
+    process.SetMethod("crash", &AtomBindings::Crash);
+
+    // Setup process.crashReporter.start in child node processes
+    auto reporter = mate::Dictionary::CreateEmpty(gin_env.isolate());
+    reporter.SetMethod("start", &crash_reporter::CrashReporter::StartInstance);
+    process.Set("crashReporter", reporter);
 
     node::LoadEnvironment(env);
 
@@ -69,7 +80,7 @@ int NodeMain(int argc, char *argv[]) {
     exit_code = node::EmitExit(env);
     node::RunAtExit(env);
 
-    env->Dispose();
+    node::FreeEnvironment(env);
   }
 
   v8::V8::Dispose();

@@ -1,17 +1,22 @@
 # desktopCapturer
 
-> List `getUserMedia` sources for capturing audio, video, and images from a
-microphone, camera, or screen.
+> Access information about media sources that can be used to capture audio and
+> video from the desktop using the [`navigator.mediaDevices.getUserMedia`] API.
+
+Process: [Renderer](../glossary.md#renderer-process)
+
+The following example shows how to capture video from a desktop window whose
+title is `Electron`:
 
 ```javascript
 // In the renderer process.
-const {desktopCapturer} = require('electron');
+const {desktopCapturer} = require('electron')
 
 desktopCapturer.getSources({types: ['window', 'screen']}, (error, sources) => {
-  if (error) throw error;
+  if (error) throw error
   for (let i = 0; i < sources.length; ++i) {
     if (sources[i].name === 'Electron') {
-      navigator.webkitGetUserMedia({
+      navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
           mandatory: {
@@ -23,29 +28,43 @@ desktopCapturer.getSources({types: ['window', 'screen']}, (error, sources) => {
             maxHeight: 720
           }
         }
-      }, gotStream, getUserMediaError);
-      return;
+      }, handleStream, handleError)
+      return
     }
   }
-});
+})
 
-function gotStream(stream) {
-  document.querySelector('video').src = URL.createObjectURL(stream);
+function handleStream (stream) {
+  document.querySelector('video').src = URL.createObjectURL(stream)
 }
 
-function getUserMediaError(e) {
-  console.log('getUserMediaError');
+function handleError (e) {
+  console.log(e)
 }
 ```
 
-When creating a constraints object for the `navigator.webkitGetUserMedia` call,
-if you are using a source from `desktopCapturer` your `chromeMediaSource` must
-be set to `"desktop"` and your `audio` must be set to `false`.
+To capture video from a source provided by `desktopCapturer` the constraints
+passed to [`navigator.mediaDevices.getUserMedia`] must include
+`chromeMediaSource: 'desktop'`, and `audio: false`.
 
-If you wish to
-capture the audio and video from the entire desktop you can set
-`chromeMediaSource` to `"screen"` and `audio` to `true`. When using this method
-you cannot specify a `chromeMediaSourceId`.
+To capture both audio and video from the entire desktop the constraints passed
+to [`navigator.mediaDevices.getUserMedia`] must include `chromeMediaSource: 'desktop'`,
+for both `audio` and `video`, but should not include a `chromeMediaSourceId` constraint.
+
+```javascript
+const constraints = {
+  audio: {
+    mandatory: {
+      chromeMediaSource: 'desktop'
+    }
+  },
+  video: {
+    mandatory: {
+      chromeMediaSource: 'desktop'
+    }
+  }
+}
+```
 
 ## Methods
 
@@ -54,26 +73,19 @@ The `desktopCapturer` module has the following methods:
 ### `desktopCapturer.getSources(options, callback)`
 
 * `options` Object
-  * `types` Array - An array of String that lists the types of desktop sources
+  * `types` String[] - An array of Strings that lists the types of desktop sources
     to be captured, available types are `screen` and `window`.
-  * `thumbnailSize` Object (optional) - The suggested size that thumbnail should
-    be scaled, it is `{width: 150, height: 150}` by default.
+  * `thumbnailSize` [Size](structures/size.md) (optional) - The size that the media source thumbnail
+    should be scaled to. Default is `150` x `150`.
 * `callback` Function
+  * `error` Error
+  * `sources` [DesktopCapturerSource[]](structures/desktop-capturer-source.md)
 
-Starts a request to get all desktop sources, `callback` will be called with
-`callback(error, sources)` when the request is completed.
+Starts gathering information about all available desktop media sources,
+and calls `callback(error, sources)` when finished.
 
-The `sources` is an array of `Source` objects, each `Source` represents a
-captured screen or individual window, and has following properties:
+`sources` is an array of [`DesktopCapturerSource`](structures/desktop-capturer-source.md)
+objects, each `DesktopCapturerSource` represents a screen or an individual window that can be
+captured.
 
-* `id` String - The id of the captured window or screen used in
-  `navigator.webkitGetUserMedia`. The format looks like `window:XX` or
-  `screen:XX` where `XX` is a random generated number.
-* `name` String - The described name of the capturing screen or window. If the
-  source is a screen, the name will be `Entire Screen` or `Screen <index>`; if
-  it is a window, the name will be the window's title.
-* `thumbnail` [NativeImage](native-image.md) - A thumbnail native image.
-
-**Note:** There is no guarantee that the size of `source.thumbnail` is always
-the same as the `thumnbailSize` in `options`. It also depends on the scale of
-the screen or window.
+[`navigator.mediaDevices.getUserMedia`]: https://developer.mozilla.org/en/docs/Web/API/MediaDevices/getUserMedia

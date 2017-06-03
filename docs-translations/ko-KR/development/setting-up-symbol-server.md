@@ -13,7 +13,7 @@
 있습니다. 유일한 해결 방법은 최적화되지 않은 로컬 빌드를 하는 것입니다.
 
 공식적인 Electron의 심볼 서버의 URL은
-http://54.249.141.255:8086/atom-shell/symbols 입니다. 일단 이 URL에 직접적으로
+https://electron-symbols.githubapp.com 입니다. 일단 이 URL에 직접적으로
 접근할 수는 없습니다: 디버깅 툴에 심볼의 경로를 추가해야 합니다. 아래의 예시를 참고하면
 로컬 캐시 디렉터리는 서버로부터 중복되지 않게 PDB를 가져오는데 사용됩니다.
 `c:\code\symbols` 캐시 디렉터리를 사용중인 OS에 맞춰 적당한 경로로 변경하세요.
@@ -25,7 +25,7 @@ Windbg 심볼 경로는 구분자와 `*` 문자로 설정되어 있습니다. El
 디렉터리 경로를 PC가 원하는 경로로 수정할 수 있습니다):
 
 ```
-SRV*c:\code\symbols\*http://54.249.141.255:8086/atom-shell/symbols
+SRV*c:\code\symbols\*https://electron-symbols.githubapp.com
 ```
 
 Windbg 메뉴 또는 `.sympath` 커맨드를 이용하여 환경에 `_NT_SYMBOL_PATH` 문자열을
@@ -33,7 +33,7 @@ Windbg 메뉴 또는 `.sympath` 커맨드를 이용하여 환경에 `_NT_SYMBOL_
 먼저해야 합니다:
 
 ```
-SRV*c:\code\symbols\*http://msdl.microsoft.com/download/symbols;SRV*c:\code\symbols\*http://54.249.141.255:8086/atom-shell/symbols
+SRV*c:\code\symbols\*http://msdl.microsoft.com/download/symbols;SRV*c:\code\symbols\*https://electron-symbols.githubapp.com
 ```
 
 ## Visual Studio에서 심볼 서버 사용하기
@@ -48,5 +48,5 @@ Windbg에서 다음의 커맨드를 입력하여 왜 심볼이 로드되지 않�
 
 ```
 > !sym noisy
-> .reload /f chromiumcontent.dll
+> .reload /f electron.exe
 ```

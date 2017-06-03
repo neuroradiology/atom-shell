@@ -4,16 +4,19 @@
 
 #include "atom/browser/atom_browser_context.h"
 
+#include "atom/browser/api/atom_api_protocol.h"
+#include "atom/browser/atom_blob_reader.h"
 #include "atom/browser/atom_browser_main_parts.h"
 #include "atom/browser/atom_download_manager_delegate.h"
-#include "atom/browser/browser.h"
-#include "atom/browser/net/atom_cert_verifier.h"
-#include "atom/browser/net/atom_network_delegate.h"
-#include "atom/browser/net/atom_ssl_config_service.h"
-#include "atom/browser/net/atom_url_request_job_factory.h"
-#include "atom/browser/net/asar/asar_protocol_handler.h"
-#include "atom/browser/net/http_protocol_handler.h"
 #include "atom/browser/atom_permission_manager.h"
+#include "atom/browser/browser.h"
+#include "atom/browser/net/about_protocol_handler.h"
+#include "atom/browser/net/asar/asar_protocol_handler.h"
+#include "atom/browser/net/atom_cert_verifier.h"
+#include "atom/browser/net/atom_ct_delegate.h"
+#include "atom/browser/net/atom_network_delegate.h"
+#include "atom/browser/net/atom_url_request_job_factory.h"
+#include "atom/browser/net/http_protocol_handler.h"
 #include "atom/browser/web_view_manager.h"
 #include "atom/common/atom_version.h"
 #include "atom/common/chrome_version.h"
@@ -29,14 +32,16 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
+#include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/user_agent.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/ftp_protocol_handler.h"
-#include "net/url_request/url_request_intercepting_job_factory.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_intercepting_job_factory.h"
 #include "url/url_constants.h"
 
 using content::BrowserThread;
@@ -64,10 +69,12 @@ std::string RemoveWhitespace(const std::string& str) {
 }  // namespace
 
 AtomBrowserContext::AtomBrowserContext(const std::string& partition,
-                                       bool in_memory)
+                                       bool in_memory,
+                                       const base::DictionaryValue& options)
     : brightray::BrowserContext(partition, in_memory),
-      cert_verifier_(new AtomCertVerifier),
-      network_delegate_(new AtomNetworkDelegate) {
+      ct_delegate_(new AtomCTDelegate),
+      network_delegate_(new AtomNetworkDelegate),
+      cookie_delegate_(new AtomCookieDelegate) {
   // Construct user agent string.
   Browser* browser = Browser::Get();
   std::string name = RemoveWhitespace(browser->GetName());
@@ -83,6 +90,13 @@ AtomBrowserContext::AtomBrowserContext(const std::string& partition,
         CHROME_VERSION_STRING);
   }
   user_agent_ = content::BuildUserAgentFromProduct(user_agent);
+
+  // Read options.
+  use_cache_ = true;
+  options.GetBoolean("cache", &use_cache_);
+
+  // Initialize Pref Registry in brightray.
+  InitPrefs();
 }
 
 AtomBrowserContext::~AtomBrowserContext() {
@@ -94,6 +108,10 @@ void AtomBrowserContext::SetUserAgent(const std::string& user_agent) {
 
 net::NetworkDelegate* AtomBrowserContext::CreateNetworkDelegate() {
   return network_delegate_;
+}
+
+net::CookieMonsterDelegate* AtomBrowserContext::CreateCookieDelegate() {
+  return cookie_delegate();
 }
 
 std::string AtomBrowserContext::GetUserAgent() {
@@ -112,31 +130,32 @@ AtomBrowserContext::CreateURLRequestJobFactory(
   }
   protocol_handlers->clear();
 
+  job_factory->SetProtocolHandler(url::kAboutScheme,
+                                  base::WrapUnique(new AboutProtocolHandler));
   job_factory->SetProtocolHandler(
-      url::kDataScheme, make_scoped_ptr(new net::DataProtocolHandler));
+      url::kDataScheme, base::WrapUnique(new net::DataProtocolHandler));
   job_factory->SetProtocolHandler(
-      url::kFileScheme, make_scoped_ptr(new asar::AsarProtocolHandler(
+      url::kFileScheme, base::WrapUnique(new asar::AsarProtocolHandler(
           BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
               base::SequencedWorkerPool::SKIP_ON_SHUTDOWN))));
   job_factory->SetProtocolHandler(
       url::kHttpScheme,
-      make_scoped_ptr(new HttpProtocolHandler(url::kHttpScheme)));
+      base::WrapUnique(new HttpProtocolHandler(url::kHttpScheme)));
   job_factory->SetProtocolHandler(
       url::kHttpsScheme,
-      make_scoped_ptr(new HttpProtocolHandler(url::kHttpsScheme)));
+      base::WrapUnique(new HttpProtocolHandler(url::kHttpsScheme)));
   job_factory->SetProtocolHandler(
       url::kWsScheme,
-      make_scoped_ptr(new HttpProtocolHandler(url::kWsScheme)));
+      base::WrapUnique(new HttpProtocolHandler(url::kWsScheme)));
   job_factory->SetProtocolHandler(
       url::kWssScheme,
-      make_scoped_ptr(new HttpProtocolHandler(url::kWssScheme)));
+      base::WrapUnique(new HttpProtocolHandler(url::kWssScheme)));
 
   auto host_resolver =
       url_request_context_getter()->GetURLRequestContext()->host_resolver();
   job_factory->SetProtocolHandler(
       url::kFtpScheme,
-      make_scoped_ptr(new net::FtpProtocolHandler(
-          new net::FtpNetworkLayer(host_resolver))));
+      net::FtpProtocolHandler::Create(host_resolver));
 
   return std::move(job_factory);
 }
@@ -145,7 +164,7 @@ net::HttpCache::BackendFactory*
 AtomBrowserContext::CreateHttpCacheBackendFactory(
     const base::FilePath& base_path) {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableHttpCache))
+  if (!use_cache_ || command_line->HasSwitch(switches::kDisableHttpCache))
     return new NoCacheBackend;
   else
     return brightray::BrowserContext::CreateHttpCacheBackendFactory(base_path);
@@ -174,11 +193,20 @@ content::PermissionManager* AtomBrowserContext::GetPermissionManager() {
 }
 
 std::unique_ptr<net::CertVerifier> AtomBrowserContext::CreateCertVerifier() {
-  return make_scoped_ptr(cert_verifier_);
+  return base::WrapUnique(new AtomCertVerifier(ct_delegate_.get()));
 }
 
-net::SSLConfigService* AtomBrowserContext::CreateSSLConfigService() {
-  return new AtomSSLConfigService;
+std::vector<std::string> AtomBrowserContext::GetCookieableSchemes() {
+  auto default_schemes = brightray::BrowserContext::GetCookieableSchemes();
+  const auto& standard_schemes = atom::api::GetStandardSchemes();
+  default_schemes.insert(default_schemes.end(),
+                         standard_schemes.begin(), standard_schemes.end());
+  return default_schemes;
+}
+
+net::TransportSecurityState::RequireCTDelegate*
+AtomBrowserContext::GetRequireCTDelegate() {
+  return ct_delegate_.get();
 }
 
 void AtomBrowserContext::RegisterPrefs(PrefRegistrySimple* pref_registry) {
@@ -191,14 +219,28 @@ void AtomBrowserContext::RegisterPrefs(PrefRegistrySimple* pref_registry) {
   pref_registry->RegisterDictionaryPref(prefs::kDevToolsFileSystemPaths);
 }
 
-}  // namespace atom
-
-namespace brightray {
-
-// static
-scoped_refptr<BrowserContext> BrowserContext::Create(
-    const std::string& partition, bool in_memory) {
-  return make_scoped_refptr(new atom::AtomBrowserContext(partition, in_memory));
+AtomBlobReader* AtomBrowserContext::GetBlobReader() {
+  if (!blob_reader_.get()) {
+    content::ChromeBlobStorageContext* blob_context =
+        content::ChromeBlobStorageContext::GetFor(this);
+    storage::FileSystemContext* file_system_context =
+        content::BrowserContext::GetStoragePartition(
+            this, nullptr)->GetFileSystemContext();
+    blob_reader_.reset(new AtomBlobReader(blob_context,
+                                          file_system_context));
+  }
+  return blob_reader_.get();
 }
 
-}  // namespace brightray
+// static
+scoped_refptr<AtomBrowserContext> AtomBrowserContext::From(
+    const std::string& partition, bool in_memory,
+    const base::DictionaryValue& options) {
+  auto browser_context = brightray::BrowserContext::Get(partition, in_memory);
+  if (browser_context)
+    return static_cast<AtomBrowserContext*>(browser_context.get());
+
+  return new AtomBrowserContext(partition, in_memory, options);
+}
+
+}  // namespace atom

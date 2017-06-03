@@ -13,11 +13,12 @@
   // Disable use of deprecated functions.
   process.throwDeprecation = true;
 
-  // Check if we are running in CI.
+  var path = require('path');
   var electron = require ('electron');
   var remote = electron.remote;
   var ipcRenderer = electron.ipcRenderer;
 
+  // Check if we are running in CI.
   var isCi = remote.getGlobal('isCi')
 
   if (!isCi) {
@@ -47,22 +48,14 @@
     });
   }
 
+  var Coverage = require('electabul').Coverage;
+
   var Mocha = require('mocha');
 
   var mocha = new Mocha();
 
-  if (isCi) {
-    mocha.grep = function () {
-      try {
-        throw new Error('A spec contains a call to it.only or describe.only and should be reverted.')
-      } catch (error) {
-        console.error(error.stack || error)
-      }
-      ipcRenderer.send('process.exit', 1)
-    }
-  }
-
   mocha.ui('bdd').reporter(isCi ? 'tap' : 'html');
+  mocha.timeout(isCi ? 30000 : 10000)
 
   var query = Mocha.utils.parseQuery(window.location.search || '');
   if (query.grep) mocha.grep(query.grep);
@@ -80,7 +73,26 @@
 
   walker.on('end', function() {
     var runner = mocha.run(function() {
+      if (isCi && runner.hasOnly) {
+        try {
+          throw new Error('A spec contains a call to it.only or describe.only and should be reverted.')
+        } catch (error) {
+          console.error(error.stack || error)
+        }
+        ipcRenderer.send('process.exit', 1)
+        return
+      }
+
       Mocha.utils.highlightTags('code');
+
+      var coverage = new Coverage({
+        libPath: path.join(__dirname, '..', '..', 'lib'),
+        outputPath: path.join(__dirname, '..', '..', 'out', 'coverage'),
+        formats: ['text', 'lcov']
+      });
+      coverage.addCoverage(ipcRenderer.sendSync('get-main-process-coverage'))
+      coverage.generateReport()
+
       if (isCi)
         ipcRenderer.send('process.exit', runner.failures);
     });

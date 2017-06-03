@@ -9,10 +9,10 @@
 #include <string>
 #include <vector>
 
-#include "brightray/browser/inspectable_web_contents_impl.h"
-#include "brightray/browser/inspectable_web_contents_delegate.h"
-#include "brightray/browser/inspectable_web_contents_view_delegate.h"
 #include "brightray/browser/devtools_file_system_indexer.h"
+#include "brightray/browser/inspectable_web_contents_delegate.h"
+#include "brightray/browser/inspectable_web_contents_impl.h"
+#include "brightray/browser/inspectable_web_contents_view_delegate.h"
 #include "content/public/browser/web_contents_delegate.h"
 
 using brightray::DevToolsFileSystemIndexer;
@@ -20,7 +20,6 @@ using brightray::DevToolsFileSystemIndexer;
 namespace atom {
 
 class AtomBrowserContext;
-class AtomJavaScriptDialogManager;
 class NativeWindow;
 class WebDialogHelper;
 
@@ -42,9 +41,6 @@ class CommonWebContentsDelegate
   void SetOwnerWindow(content::WebContents* web_contents,
                       NativeWindow* owner_window);
 
-  // Destroy the managed InspectableWebContents object.
-  void DestroyWebContents();
-
   // Returns the WebContents managed by this delegate.
   content::WebContents* GetWebContents() const;
 
@@ -65,13 +61,11 @@ class CommonWebContentsDelegate
       content::WebContents* source,
       const content::OpenURLParams& params) override;
   bool CanOverscrollContent() const override;
-  content::JavaScriptDialogManager* GetJavaScriptDialogManager(
-      content::WebContents* source) override;
   content::ColorChooser* OpenColorChooser(
       content::WebContents* web_contents,
       SkColor color,
       const std::vector<content::ColorSuggestion>& suggestions) override;
-  void RunFileChooser(content::WebContents* web_contents,
+  void RunFileChooser(content::RenderFrameHost* render_frame_host,
                       const content::FileChooserParams& params) override;
   void EnumerateDirectory(content::WebContents* web_contents,
                           int request_id,
@@ -81,7 +75,7 @@ class CommonWebContentsDelegate
   void ExitFullscreenModeForTab(content::WebContents* source) override;
   bool IsFullscreenForTabOrPending(
       const content::WebContents* source) const override;
-  content::SecurityStyle GetSecurityStyle(
+  blink::WebSecurityStyle GetSecurityStyle(
       content::WebContents* web_contents,
       content::SecurityStyleExplanations* explanations) override;
   void HandleKeyboardEvent(
@@ -113,6 +107,9 @@ class CommonWebContentsDelegate
   void GetDevToolsWindowWMClass(
       std::string* name, std::string* class_name) override;
 #endif
+
+  // Destroy the managed InspectableWebContents object.
+  void ResetManagedWebContents(bool async);
 
  private:
   // Callback for when DevToolsSaveToFile has completed.
@@ -147,7 +144,6 @@ class CommonWebContentsDelegate
   bool native_fullscreen_;
 
   std::unique_ptr<WebDialogHelper> web_dialog_helper_;
-  std::unique_ptr<AtomJavaScriptDialogManager> dialog_manager_;
   scoped_refptr<DevToolsFileSystemIndexer> devtools_file_system_indexer_;
 
   // Make sure BrowserContext is alwasys destroyed after WebContents.

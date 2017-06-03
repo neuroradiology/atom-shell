@@ -19,14 +19,17 @@
 #undef CHECK_GT
 #undef CHECK_LE
 #undef CHECK_LT
+#undef UNLIKELY
 #undef DISALLOW_COPY_AND_ASSIGN
 #undef NO_RETURN
+#undef LIKELY
 #undef arraysize
 #undef debug_string  // This is defined in macOS 10.9 SDK in AssertMacros.h.
 #include "vendor/node/src/env.h"
 #include "vendor/node/src/env-inl.h"
 #include "vendor/node/src/node.h"
 #include "vendor/node/src/node_buffer.h"
+#include "vendor/node/src/node_debug_options.h"
 #include "vendor/node/src/node_internals.h"
 
 #endif  // ATOM_COMMON_NODE_INCLUDES_H_

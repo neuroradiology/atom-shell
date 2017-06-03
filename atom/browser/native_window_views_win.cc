@@ -2,6 +2,7 @@
 // Use of this source code is governed by the MIT license that can be
 // found in the LICENSE file.
 
+#include "atom/browser/browser.h"
 #include "atom/browser/native_window_views.h"
 #include "content/public/browser/browser_accessibility_state.h"
 
@@ -71,6 +72,12 @@ const char* AppCommandToString(int command_id) {
   }
 }
 
+bool IsScreenReaderActive() {
+  UINT screenReader = 0;
+  SystemParametersInfo(SPI_GETSCREENREADER, 0, &screenReader, 0);
+  return screenReader && UiaClientsAreListening();
+}
+
 }  // namespace
 
 bool NativeWindowViews::ExecuteWindowsCommand(int command_id) {
@@ -90,15 +97,24 @@ bool NativeWindowViews::PreHandleMSG(
     // because we still want Chromium to handle returning the actual
     // accessibility object.
     case WM_GETOBJECT: {
-      const DWORD obj_id = static_cast<DWORD>(l_param);
-      if (enabled_a11y_support_) return false;
+      if (checked_for_a11y_support_) return false;
 
-      if (obj_id == OBJID_CLIENT) {
-        const auto axState = content::BrowserAccessibilityState::GetInstance();
-        if (axState && !axState->IsAccessibleBrowser()) {
-          axState->OnScreenReaderDetected();
-          enabled_a11y_support_ = true;
-        }
+      const DWORD obj_id = static_cast<DWORD>(l_param);
+
+      if (obj_id != OBJID_CLIENT) {
+        return false;
+      }
+
+      if (!IsScreenReaderActive()) {
+        return false;
+      }
+
+      checked_for_a11y_support_ = true;
+
+      const auto axState = content::BrowserAccessibilityState::GetInstance();
+      if (axState && !axState->IsAccessibleBrowser()) {
+        axState->OnScreenReaderDetected();
+        Browser::Get()->OnAccessibilitySupportChanged();
       }
 
       return false;
@@ -108,18 +124,34 @@ bool NativeWindowViews::PreHandleMSG(
       if (HIWORD(w_param) == THBN_CLICKED)
         return taskbar_host_.HandleThumbarButtonEvent(LOWORD(w_param));
       return false;
-
-    case WM_SIZE:
+    case WM_SIZE: {
       // Handle window state change.
       HandleSizeEvent(w_param, l_param);
-      return false;
 
+      consecutive_moves_ = false;
+      last_normal_bounds_before_move_ = last_normal_bounds_;
+
+      return false;
+    }
     case WM_MOVING: {
       if (!movable_)
         ::GetWindowRect(GetAcceleratedWidget(), (LPRECT)l_param);
       return false;
     }
-
+    case WM_MOVE: {
+      if (last_window_state_ == ui::SHOW_STATE_NORMAL) {
+        if (consecutive_moves_)
+          last_normal_bounds_ = last_normal_bounds_candidate_;
+        last_normal_bounds_candidate_ = GetBounds();
+        consecutive_moves_ = true;
+      }
+      return false;
+    }
+    case WM_ENDSESSION: {
+      if (w_param) {
+        NotifyWindowEndSession();
+      }
+    }
     default:
       return false;
   }
@@ -131,6 +163,9 @@ void NativeWindowViews::HandleSizeEvent(WPARAM w_param, LPARAM l_param) {
   switch (w_param) {
     case SIZE_MAXIMIZED:
       last_window_state_ = ui::SHOW_STATE_MAXIMIZED;
+      if (consecutive_moves_) {
+        last_normal_bounds_ = last_normal_bounds_before_move_;
+      }
       NotifyWindowMaximize();
       break;
     case SIZE_MINIMIZED:
@@ -140,15 +175,15 @@ void NativeWindowViews::HandleSizeEvent(WPARAM w_param, LPARAM l_param) {
     case SIZE_RESTORED:
       if (last_window_state_ == ui::SHOW_STATE_NORMAL) {
         // Window was resized so we save it's new size.
-        last_normal_size_ = GetSize();
+        last_normal_bounds_ = GetBounds();
+        last_normal_bounds_before_move_ = last_normal_bounds_;
       } else {
         switch (last_window_state_) {
           case ui::SHOW_STATE_MAXIMIZED:
             last_window_state_ = ui::SHOW_STATE_NORMAL;
 
-            // When the window is restored we resize it to the previous known
-            // normal size.
-            NativeWindow::SetSize(last_normal_size_);
+            // Don't force out last known bounds onto the window as Windows
+            // actually gets these correct
 
             NotifyWindowUnmaximize();
             break;
@@ -161,7 +196,7 @@ void NativeWindowViews::HandleSizeEvent(WPARAM w_param, LPARAM l_param) {
 
               // When the window is restored we resize it to the previous known
               // normal size.
-              NativeWindow::SetSize(last_normal_size_);
+              SetBounds(last_normal_bounds_, false);
 
               NotifyWindowRestore();
             }

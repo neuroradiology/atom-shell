@@ -17,7 +17,6 @@
 
 using content::BrowserPpapiHost;
 using content::BrowserThread;
-using content::RenderProcessHost;
 
 namespace chrome {
 
@@ -33,7 +32,7 @@ PepperBrokerMessageFilter::~PepperBrokerMessageFilter() {}
 scoped_refptr<base::TaskRunner>
 PepperBrokerMessageFilter::OverrideTaskRunnerForMessage(
     const IPC::Message& message) {
-  return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
+  return BrowserThread::GetTaskRunnerForThread(BrowserThread::UI);
 }
 
 int32_t PepperBrokerMessageFilter::OnResourceMessageReceived(

@@ -2,14 +2,16 @@
 
 > Control your application's event lifecycle.
 
+Process: [Main](../glossary.md#main-process)
+
 The following example shows how to quit the application when the last window is
 closed:
 
 ```javascript
-const {app} = require('electron');
+const {app} = require('electron')
 app.on('window-all-closed', () => {
-  app.quit();
-});
+  app.quit()
+})
 ```
 
 ## Events
@@ -28,7 +30,14 @@ In most cases, you should just do everything in the `ready` event handler.
 
 ### Event: 'ready'
 
-Emitted when Electron has finished initialization.
+Returns:
+
+* `launchInfo` Object _macOS_
+
+Emitted when Electron has finished initializing. On macOS, `launchInfo` holds
+the `userInfo` of the `NSUserNotification` that was used to open the application,
+if it was launched from Notification Center. You can call `app.isReady()` to
+check if this event has already fired.
 
 ### Event: 'window-all-closed'
 
@@ -50,6 +59,10 @@ Returns:
 Emitted before the application starts closing its windows.
 Calling `event.preventDefault()` will prevent the default behaviour, which is
 terminating the application.
+
+**Note:** If application quit was initiated by `autoUpdater.quitAndInstall()`
+then `before-quit` is emitted *after* emitting `close` event on all windows and
+closing them.
 
 ### Event: 'will-quit'
 
@@ -99,8 +112,9 @@ Returns:
 * `event` Event
 * `url` String
 
-Emitted when the user wants to open a URL with the application. The URL scheme
-must be registered to be opened by your application.
+Emitted when the user wants to open a URL with the application. Your application's
+`Info.plist` file must define the url scheme within the `CFBundleURLTypes` key, and
+set `NSPrincipalClass` to `AtomApplication`.
 
 You should call `event.preventDefault()` if you want to handle this event.
 
@@ -111,8 +125,10 @@ Returns:
 * `event` Event
 * `hasVisibleWindows` Boolean
 
-Emitted when the application is activated, which usually happens when the user
-clicks on the application's dock icon.
+Emitted when the application is activated. Various actions can trigger
+this event, such as launching the application for the first time, attempting
+to re-launch the application when it's already running, or clicking on the
+application's dock or taskbar icon.
 
 ### Event: 'continue-activity' _macOS_
 
@@ -175,27 +191,28 @@ Returns:
 
 * `event` Event
 * `webContents` [WebContents](web-contents.md)
-* `url` URL
+* `url` String
 * `error` String - The error code
-* `certificate` Object
-  * `data` Buffer - PEM encoded data
-  * `issuerName` String
+* `certificate` [Certificate](structures/certificate.md)
 * `callback` Function
+  * `isTrusted` Boolean - Whether to consider the certificate as trusted
 
 Emitted when failed to verify the `certificate` for `url`, to trust the
 certificate you should prevent the default behavior with
 `event.preventDefault()` and call `callback(true)`.
 
 ```javascript
+const {app} = require('electron')
+
 app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
   if (url === 'https://github.com') {
     // Verification logic.
-    event.preventDefault();
-    callback(true);
+    event.preventDefault()
+    callback(true)
   } else {
-    callback(false);
+    callback(false)
   }
-});
+})
 ```
 
 ### Event: 'select-client-certificate'
@@ -205,23 +222,24 @@ Returns:
 * `event` Event
 * `webContents` [WebContents](web-contents.md)
 * `url` URL
-* `certificateList` [Objects]
-  * `data` Buffer - PEM encoded data
-  * `issuerName` String - Issuer's Common Name
+* `certificateList` [Certificate[]](structures/certificate.md)
 * `callback` Function
+  * `certificate` [Certificate](structures/certificate.md) (optional)
 
 Emitted when a client certificate is requested.
 
 The `url` corresponds to the navigation entry requesting the client certificate
-and `callback` needs to be called with an entry filtered from the list. Using
+and `callback` can be called with an entry filtered from the list. Using
 `event.preventDefault()` prevents the application from using the first
 certificate from the store.
 
 ```javascript
+const {app} = require('electron')
+
 app.on('select-client-certificate', (event, webContents, url, list, callback) => {
-  event.preventDefault();
-  callback(list[0]);
-});
+  event.preventDefault()
+  callback(list[0])
+})
 ```
 
 ### Event: 'login'
@@ -241,6 +259,8 @@ Returns:
   * `port` Integer
   * `realm` String
 * `callback` Function
+  * `username` String
+  * `password` String
 
 Emitted when `webContents` wants to do basic auth.
 
@@ -249,15 +269,35 @@ should prevent the default behavior with `event.preventDefault()` and call
 `callback(username, password)` with the credentials.
 
 ```javascript
+const {app} = require('electron')
+
 app.on('login', (event, webContents, request, authInfo, callback) => {
-  event.preventDefault();
-  callback('username', 'secret');
-});
+  event.preventDefault()
+  callback('username', 'secret')
+})
 ```
 
 ### Event: 'gpu-process-crashed'
 
-Emitted when the gpu process crashes.
+Returns:
+
+* `event` Event
+* `killed` Boolean
+
+Emitted when the gpu process crashes or is killed.
+
+### Event: 'accessibility-support-changed' _macOS_ _Windows_
+
+Returns:
+
+* `event` Event
+* `accessibilitySupportEnabled` Boolean - `true` when Chrome's accessibility
+  support is enabled, `false` otherwise.
+
+Emitted when Chrome's accessibility support changes. This event fires when
+assistive technologies, such as screen readers, are enabled or disabled.
+See https://www.chromium.org/developers/design-documents/accessibility for more
+details.
 
 ## Methods
 
@@ -276,11 +316,11 @@ This method guarantees that all `beforeunload` and `unload` event handlers are
 correctly executed. It is possible that a window cancels the quitting by
 returning `false` in the `beforeunload` event handler.
 
-### `app.exit(exitCode)`
+### `app.exit([exitCode])`
 
-* `exitCode` Integer
+* `exitCode` Integer (optional)
 
-Exits immediately with `exitCode`.
+Exits immediately with `exitCode`.  `exitCode` defaults to 0.
 
 All windows will be closed immediately without asking user and the `before-quit`
 and `will-quit` events will not be emitted.
@@ -288,7 +328,7 @@ and `will-quit` events will not be emitted.
 ### `app.relaunch([options])`
 
 * `options` Object (optional)
-  * `args` Array (optional)
+  * `args` String[] - (optional)
   * `execPath` String (optional)
 
 Relaunches the app when current instance exits.
@@ -308,9 +348,15 @@ An example of restarting current instance immediately and adding a new command
 line argument to the new instance:
 
 ```javascript
-app.relaunch({args: process.argv.slice(1) + ['--relaunch']})
+const {app} = require('electron')
+
+app.relaunch({args: process.argv.slice(1).concat(['--relaunch'])})
 app.exit(0)
 ```
+
+### `app.isReady()`
+
+Returns `Boolean` - `true` if Electron has finished initializing, `false` otherwise.
 
 ### `app.focus()`
 
@@ -328,13 +374,13 @@ them.
 
 ### `app.getAppPath()`
 
-Returns the current application directory.
+Returns `String` - The current application directory.
 
 ### `app.getPath(name)`
 
 * `name` String
 
-Retrieves a path to a special directory or file associated with `name`. On
+Returns `String` - A path to a special directory or file associated with `name`. On
 failure an `Error` is thrown.
 
 You can request the following paths by the name:
@@ -357,6 +403,28 @@ You can request the following paths by the name:
 * `videos` Directory for a user's videos.
 * `pepperFlashSystemPlugin`  Full path to the system version of the Pepper Flash plugin.
 
+### `app.getFileIcon(path[, options], callback)`
+
+* `path` String
+* `options` Object (optional)
+  * `size` String
+    * `small` - 16x16
+    * `normal` - 32x32
+    * `large` - 48x48 on _Linux_, 32x32 on _Windows_, unsupported on _macOS_.
+* `callback` Function
+  * `error` Error
+  * `icon` [NativeImage](native-image.md)
+
+Fetches a path's associated icon.
+
+On _Windows_, there a 2 kinds of icons:
+
+- Icons associated with certain file extensions, like `.mp3`, `.png`, etc.
+- Icons inside the file itself, like `.exe`, `.dll`, `.ico`.
+
+On _Linux_ and _macOS_, icons depend on the application associated with file
+mime type.
+
 ### `app.setPath(name, path)`
 
 * `name` String
@@ -374,13 +442,13 @@ directory. If you want to change this location, you have to override the
 
 ### `app.getVersion()`
 
-Returns the version of the loaded application. If no version is found in the
+Returns `String` - The version of the loaded application. If no version is found in the
 application's `package.json` file, the version of the current bundle or
 executable is returned.
 
 ### `app.getName()`
 
-Returns the current application's name, which is the name in the application's
+Returns `String` - The current application's name, which is the name in the application's
 `package.json` file.
 
 Usually the `name` field of `package.json` is a short lowercased name, according
@@ -396,7 +464,8 @@ Overrides the current application's name.
 
 ### `app.getLocale()`
 
-Returns the current application locale.
+Returns `String` - The current application locale. Possible return values are documented
+[here](locales.md).
 
 **Note:** When distributing your packaged app, you have to also ship the
 `locales` folder.
@@ -416,17 +485,24 @@ bar, and on macOS you can visit it from dock menu.
 
 Clears the recent documents list.
 
-### `app.setAsDefaultProtocolClient(protocol)` _macOS_ _Windows_
+### `app.setAsDefaultProtocolClient(protocol[, path, args])` _macOS_ _Windows_
 
 * `protocol` String - The name of your protocol, without `://`. If you want your
   app to handle `electron://` links, call this method with `electron` as the
   parameter.
+* `path` String (optional) _Windows_ - Defaults to `process.execPath`
+* `args` String[] (optional) _Windows_ - Defaults to an empty array
+
+Returns `Boolean` - Whether the call succeeded.
 
 This method sets the current executable as the default handler for a protocol
 (aka URI scheme). It allows you to integrate your app deeper into the operating
 system. Once registered, all links with `your-protocol://` will be opened with
 the current executable. The whole link, including protocol, will be passed to
 your application as a parameter.
+
+On Windows you can provide optional parameters path, the path to your executable,
+and args, an array of arguments to be passed to your executable when it launches.
 
 **Note:** On macOS, you can only register protocols that have been added to
 your app's `info.plist`, which can not be modified at runtime. You can however
@@ -435,16 +511,25 @@ Please refer to [Apple's documentation][CFBundleURLTypes] for details.
 
 The API uses the Windows Registry and LSSetDefaultHandlerForURLScheme internally.
 
-### `app.removeAsDefaultProtocolClient(protocol)` _macOS_ _Windows_
+### `app.removeAsDefaultProtocolClient(protocol[, path, args])` _macOS_ _Windows_
 
 * `protocol` String - The name of your protocol, without `://`.
+* `path` String (optional) _Windows_ - Defaults to `process.execPath`
+* `args` String[] (optional) _Windows_ - Defaults to an empty array
+
+Returns `Boolean` - Whether the call succeeded.
 
 This method checks if the current executable as the default handler for a
 protocol (aka URI scheme). If so, it will remove the app as the default handler.
 
-### `app.isDefaultProtocolClient(protocol)` _macOS_ _Windows_
+
+### `app.isDefaultProtocolClient(protocol[, path, args])` _macOS_ _Windows_
 
 * `protocol` String - The name of your protocol, without `://`.
+* `path` String (optional) _Windows_ - Defaults to `process.execPath`
+* `args` String[] (optional) _Windows_ - Defaults to an empty array
+
+Returns `Boolean`
 
 This method checks if the current executable is the default handler for a protocol
 (aka URI scheme). If so, it will return true. Otherwise, it will return false.
@@ -459,30 +544,130 @@ The API uses the Windows Registry and LSCopyDefaultHandlerForURLScheme internall
 
 ### `app.setUserTasks(tasks)` _Windows_
 
-* `tasks` Array - Array of `Task` objects
+* `tasks` [Task[]](structures/task.md) - Array of `Task` objects
 
 Adds `tasks` to the [Tasks][tasks] category of the JumpList on Windows.
 
-`tasks` is an array of `Task` objects in the following format:
+`tasks` is an array of [`Task`](structures/task.md) objects.
 
-`Task` Object:
+Returns `Boolean` - Whether the call succeeded.
 
-* `program` String - Path of the program to execute, usually you should
-  specify `process.execPath` which opens the current program.
-* `arguments` String - The command line arguments when `program` is
-  executed.
-* `title` String - The string to be displayed in a JumpList.
-* `description` String - Description of this task.
-* `iconPath` String - The absolute path to an icon to be displayed in a
-  JumpList, which can be an arbitrary resource file that contains an icon. You
-  can usually specify `process.execPath` to show the icon of the program.
-* `iconIndex` Integer - The icon index in the icon file. If an icon file
-  consists of two or more icons, set this value to identify the icon. If an
-  icon file consists of one icon, this value is 0.
+**Note:** If you'd like to customize the Jump List even more use
+`app.setJumpList(categories)` instead.
+
+### `app.getJumpListSettings()` _Windows_
+
+Returns `Object`:
+
+* `minItems` Integer - The minimum number of items that will be shown in the
+  Jump List (for a more detailed description of this value see the
+  [MSDN docs][JumpListBeginListMSDN]).
+* `removedItems` [JumpListItem[]](structures/jump-list-item.md) - Array of `JumpListItem` objects that correspond to
+  items that the user has explicitly removed from custom categories in the
+  Jump List. These items must not be re-added to the Jump List in the **next**
+  call to `app.setJumpList()`, Windows will not display any custom category
+  that contains any of the removed items.
+
+### `app.setJumpList(categories)` _Windows_
+
+* `categories` [JumpListCategory[]](structures/jump-list-category.md) or `null` - Array of `JumpListCategory` objects.
+
+Sets or removes a custom Jump List for the application, and returns one of the
+following strings:
+
+* `ok` - Nothing went wrong.
+* `error` - One or more errors occurred, enable runtime logging to figure out
+  the likely cause.
+* `invalidSeparatorError` - An attempt was made to add a separator to a
+  custom category in the Jump List. Separators are only allowed in the
+  standard `Tasks` category.
+* `fileTypeRegistrationError` - An attempt was made to add a file link to
+  the Jump List for a file type the app isn't registered to handle.
+* `customCategoryAccessDeniedError` - Custom categories can't be added to the
+  Jump List due to user privacy or group policy settings.
+
+If `categories` is `null` the previously set custom Jump List (if any) will be
+replaced by the standard Jump List for the app (managed by Windows).
+
+**Note:** If a `JumpListCategory` object has neither the `type` nor the `name`
+property set then its `type` is assumed to be `tasks`. If the `name` property
+is set but the `type` property is omitted then the `type` is assumed to be
+`custom`.
+
+**Note:** Users can remove items from custom categories, and Windows will not
+allow a removed item to be added back into a custom category until **after**
+the next successful call to `app.setJumpList(categories)`. Any attempt to
+re-add a removed item to a custom category earlier than that will result in the
+entire custom category being omitted from the Jump List. The list of removed
+items can be obtained using `app.getJumpListSettings()`.
+
+Here's a very simple example of creating a custom Jump List:
+
+```javascript
+const {app} = require('electron')
+
+app.setJumpList([
+  {
+    type: 'custom',
+    name: 'Recent Projects',
+    items: [
+      { type: 'file', path: 'C:\\Projects\\project1.proj' },
+      { type: 'file', path: 'C:\\Projects\\project2.proj' }
+    ]
+  },
+  { // has a name so `type` is assumed to be "custom"
+    name: 'Tools',
+    items: [
+      {
+        type: 'task',
+        title: 'Tool A',
+        program: process.execPath,
+        args: '--run-tool-a',
+        icon: process.execPath,
+        iconIndex: 0,
+        description: 'Runs Tool A'
+      },
+      {
+        type: 'task',
+        title: 'Tool B',
+        program: process.execPath,
+        args: '--run-tool-b',
+        icon: process.execPath,
+        iconIndex: 0,
+        description: 'Runs Tool B'
+      }
+    ]
+  },
+  { type: 'frequent' },
+  { // has no name and no type so `type` is assumed to be "tasks"
+    items: [
+      {
+        type: 'task',
+        title: 'New Project',
+        program: process.execPath,
+        args: '--new-project',
+        description: 'Create a new project.'
+      },
+      { type: 'separator' },
+      {
+        type: 'task',
+        title: 'Recover Project',
+        program: process.execPath,
+        args: '--recover-project',
+        description: 'Recover Project'
+      }
+    ]
+  }
+])
+```
 
 ### `app.makeSingleInstance(callback)`
 
 * `callback` Function
+  * `argv` String[] - An array of the second instance's command line arguments
+  * `workingDirectory` String - The second instance's working directory
+
+Returns `Boolean`.
 
 This method makes your application a Single Instance Application - instead of
 allowing multiple instances of your app to run, this will ensure that only a
@@ -513,24 +698,24 @@ An example of activating the window of primary instance when a second instance
 starts:
 
 ```javascript
-let myWindow = null;
+const {app} = require('electron')
+let myWindow = null
 
 const shouldQuit = app.makeSingleInstance((commandLine, workingDirectory) => {
   // Someone tried to run a second instance, we should focus our window.
   if (myWindow) {
-    if (myWindow.isMinimized()) myWindow.restore();
-    myWindow.focus();
+    if (myWindow.isMinimized()) myWindow.restore()
+    myWindow.focus()
   }
-});
+})
 
 if (shouldQuit) {
-  app.quit();
-  return;
+  app.quit()
 }
 
 // Create myWindow, load the rest of the app, etc...
 app.on('ready', () => {
-});
+})
 ```
 
 ### `app.releaseSingleInstance()`
@@ -543,7 +728,7 @@ multiple instances of the application to once again run side by side.
 * `type` String - Uniquely identifies the activity. Maps to
   [`NSUserActivity.activityType`][activity-type].
 * `userInfo` Object - App-specific state to store for use by another device.
-* `webpageURL` String - The webpage to load in a browser if no suitable app is
+* `webpageURL` String (optional) - The webpage to load in a browser if no suitable app is
   installed on the resuming device. The scheme must be `http` or `https`.
 
 Creates an `NSUserActivity` and sets it as the current activity. The activity
@@ -551,7 +736,7 @@ is eligible for [Handoff][handoff] to another device afterward.
 
 ### `app.getCurrentActivityType()` _macOS_
 
-Returns the type of the currently running activity.
+Returns `String` - The type of the currently running activity.
 
 ### `app.setAppUserModelId(id)` _Windows_
 
@@ -577,7 +762,132 @@ Disables hardware acceleration for current app.
 
 This method can only be called before app is ready.
 
+### `app.getAppMemoryInfo()` _Deprecated_
+
+Returns [`ProcessMetric[]`](structures/process-metric.md):  Array of `ProcessMetric` objects that correspond to memory and cpu usage statistics of all the processes associated with the app.
+**Note:** This method is deprecated, use `app.getAppMetrics()` instead.
+
+### `app.getAppMetrics()`
+
+Returns [`ProcessMetric[]`](structures/process-metric.md):  Array of `ProcessMetric` objects that correspond to memory and cpu usage statistics of all the processes associated with the app.
+
+### `app.getGpuFeatureStatus()`
+
+Returns [`GPUFeatureStatus`](structures/gpu-feature-status.md) - The Graphics Feature Status from `chrome://gpu/`.
+
+### `app.setBadgeCount(count)` _Linux_ _macOS_
+
+* `count` Integer
+
+Returns `Boolean` - Whether the call succeeded.
+
+Sets the counter badge for current app. Setting the count to `0` will hide the
+badge.
+
+On macOS it shows on the dock icon. On Linux it only works for Unity launcher,
+
+**Note:** Unity launcher requires the existence of a `.desktop` file to work,
+for more information please read [Desktop Environment Integration][unity-requirement].
+
+### `app.getBadgeCount()` _Linux_ _macOS_
+
+Returns `Integer` - The current value displayed in the counter badge.
+
+### `app.isUnityRunning()` _Linux_
+
+Returns `Boolean` - Whether the current desktop environment is Unity launcher.
+
+### `app.getLoginItemSettings([options])` _macOS_ _Windows_
+
+* `options` Object (optional)
+  * `path` String (optional) _Windows_ - The executable path to compare against.
+    Defaults to `process.execPath`.
+  * `args` String[] (optional) _Windows_ - The command-line arguments to compare
+    against. Defaults to an empty array.
+
+If you provided `path` and `args` options to `app.setLoginItemSettings` then you
+need to pass the same arguments here for `openAtLogin` to be set correctly.
+
+Returns `Object`:
+
+* `openAtLogin` Boolean - `true` if the app is set to open at login.
+* `openAsHidden` Boolean - `true` if the app is set to open as hidden at login.
+  This setting is only supported on macOS.
+* `wasOpenedAtLogin` Boolean - `true` if the app was opened at login
+  automatically. This setting is only supported on macOS.
+* `wasOpenedAsHidden` Boolean - `true` if the app was opened as a hidden login
+  item. This indicates that the app should not open any windows at startup.
+  This setting is only supported on macOS.
+* `restoreState` Boolean - `true` if the app was opened as a login item that
+  should restore the state from the previous session. This indicates that the
+  app should restore the windows that were open the last time the app was
+  closed. This setting is only supported on macOS.
+
+**Note:** This API has no effect on [MAS builds][mas-builds].
+
+### `app.setLoginItemSettings(settings[, path, args])` _macOS_ _Windows_
+
+* `settings` Object
+  * `openAtLogin` Boolean (optional) - `true` to open the app at login, `false` to remove
+    the app as a login item. Defaults to `false`.
+  * `openAsHidden` Boolean (optional) - `true` to open the app as hidden. Defaults to
+    `false`. The user can edit this setting from the System Preferences so
+    `app.getLoginItemStatus().wasOpenedAsHidden` should be checked when the app
+    is opened to know the current value. This setting is only supported on
+    macOS.
+* `path` String (optional) _Windows_ - The executable to launch at login.
+  Defaults to `process.execPath`.
+* `args` String[] (optional) _Windows_ - The command-line arguments to pass to
+  the executable. Defaults to an empty array. Take care to wrap paths in
+  quotes.
+
+Set the app's login item settings.
+
+To work with Electron's `autoUpdater` on Windows, which uses [Squirrel][Squirrel-Windows],
+you'll want to set the launch path to Update.exe, and pass arguments that specify your
+application name. For example:
+
+``` javascript
+const appFolder = path.dirname(process.execPath)
+const updateExe = path.resolve(appFolder, '..', 'Update.exe')
+const exeName = path.basename(process.execPath)
+
+app.setLoginItemSettings({
+  openAtLogin: true,
+  path: updateExe,
+  args: [
+    '--processStart', `"${exeName}"`,
+    '--process-start-args', `"--hidden"`
+  ]
+})
+```
+
+**Note:** This API has no effect on [MAS builds][mas-builds].
+
+### `app.isAccessibilitySupportEnabled()` _macOS_ _Windows_
+
+Returns `Boolean` - `true` if Chrome's accessibility support is enabled,
+`false` otherwise. This API will return `true` if the use of assistive
+technologies, such as screen readers, has been detected. See
+https://www.chromium.org/developers/design-documents/accessibility for more
+details.
+
+### `app.setAboutPanelOptions(options)` _macOS_
+
+* `options` Object
+  * `applicationName` String (optional) - The app's name.
+  * `applicationVersion` String (optional) - The app's version.
+  * `copyright` String (optional) - Copyright information.
+  * `credits` String (optional) - Credit information.
+  * `version` String (optional) - The app's build version number.
+
+Set the about panel options. This will override the values defined in the app's
+`.plist` file. See the [Apple docs][about-panel-options] for more details.
+
 ### `app.commandLine.appendSwitch(switch[, value])`
+
+* `switch` String - A command-line switch
+* `value` String (optional) - A value for the given switch
 
 Append a switch (with optional `value`) to Chromium's command line.
 
@@ -585,6 +895,8 @@ Append a switch (with optional `value`) to Chromium's command line.
 to control some low-level Chromium behaviors.
 
 ### `app.commandLine.appendArgument(value)`
+
+* `value` String - The argument to append to the command line
 
 Append an argument to Chromium's command line. The argument will be quoted
 correctly.
@@ -603,7 +915,7 @@ When `informational` is passed, the dock icon will bounce for one second.
 However, the request remains active until either the application becomes active
 or the request is canceled.
 
-Returns an ID representing the request.
+Returns `Integer` an ID representing the request.
 
 ### `app.dock.cancelBounce(id)` _macOS_
 
@@ -625,7 +937,7 @@ Sets the string to be displayed in the dock’s badging area.
 
 ### `app.dock.getBadge()` _macOS_
 
-Returns the badge string of the dock.
+Returns `String` - The badge string of the dock.
 
 ### `app.dock.hide()` _macOS_
 
@@ -635,6 +947,12 @@ Hides the dock icon.
 
 Shows the dock icon.
 
+### `app.dock.isVisible()` _macOS_
+
+Returns `Boolean` - Whether the dock icon is visible.
+The `app.dock.show()` call is asynchronous so this method might not
+return true immediately after that call.
+
 ### `app.dock.setMenu(menu)` _macOS_
 
 * `menu` [Menu](menu.md)
@@ -643,34 +961,9 @@ Sets the application's [dock menu][dock-menu].
 
 ### `app.dock.setIcon(image)` _macOS_
 
-* `image` [NativeImage](native-image.md)
+* `image` ([NativeImage](native-image.md) | String)
 
 Sets the `image` associated with this dock icon.
-
-### `app.launcher.setBadgeCount(count)` _Linux_
-* `count` Integer
-
-Sets the number to be displayed next to the app icon in the Unity launcher.
-Setting the count to `0` will hide the badge.
-
-**Note:** This feature is currently only supported on Ubuntu Unity. Calling this function has no effect when the application is running in a different environment.
-
-**Note:** You need to specify the .desktop file name to the `desktopName` field in package.json. By default, it will assume `app.getName().desktop` in packaged apps.
-
-### `app.launcher.getBadgeCount()` _Linux_
-
-Returns the current value displayed in the counter badge next to the launcher icon.
-
-**Note:** As `setBadgeCount` only supports Ubuntu Unity, the value will be 0 when the application is running in a different environment.
-
-### `app.launcher.isUnityRunning()` _Linux_
-
-This method checks if the current desktop environment is Unity and returns `true` in this case.
-
-### `app.launcher.isCounterBadgeAvailable()` _Linux_
-
-This method checks if the current desktop environment supports an app icon counter badge and returns `true` in this case.
-
 
 [dock-menu]:https://developer.apple.com/library/mac/documentation/Carbon/Conceptual/customizing_docktile/concepts/dockconcepts.html#//apple_ref/doc/uid/TP30000986-CH2-TPXREF103
 [tasks]:http://msdn.microsoft.com/en-us/library/windows/desktop/dd378460(v=vs.85).aspx#tasks
@@ -679,3 +972,8 @@ This method checks if the current desktop environment supports an app icon count
 [LSCopyDefaultHandlerForURLScheme]: https://developer.apple.com/library/mac/documentation/Carbon/Reference/LaunchServicesReference/#//apple_ref/c/func/LSCopyDefaultHandlerForURLScheme
 [handoff]: https://developer.apple.com/library/ios/documentation/UserExperience/Conceptual/Handoff/HandoffFundamentals/HandoffFundamentals.html
 [activity-type]: https://developer.apple.com/library/ios/documentation/Foundation/Reference/NSUserActivity_Class/index.html#//apple_ref/occ/instp/NSUserActivity/activityType
+[unity-requirement]: ../tutorial/desktop-environment-integration.md#unity-launcher-shortcuts-linux
+[mas-builds]: ../tutorial/mac-app-store-submission-guide.md
+[Squirrel-Windows]: https://github.com/Squirrel/Squirrel.Windows
+[JumpListBeginListMSDN]: https://msdn.microsoft.com/en-us/library/windows/desktop/dd378398(v=vs.85).aspx
+[about-panel-options]: https://developer.apple.com/reference/appkit/nsapplication/1428479-orderfrontstandardaboutpanelwith?language=objc

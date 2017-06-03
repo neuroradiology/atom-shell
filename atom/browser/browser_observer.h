@@ -46,11 +46,14 @@ class BrowserObserver {
 
   // The browser has finished loading.
   virtual void OnWillFinishLaunching() {}
-  virtual void OnFinishLaunching() {}
+  virtual void OnFinishLaunching(const base::DictionaryValue& launch_info) {}
 
   // The browser requests HTTP login.
   virtual void OnLogin(LoginHandler* login_handler,
                        const base::DictionaryValue& request_details) {}
+
+  // The browser's accessibility suppport has changed.
+  virtual void OnAccessibilitySupportChanged() {}
 
 #if defined(OS_MACOSX)
   // The browser wants to resume a user activity via handoff. (macOS only)

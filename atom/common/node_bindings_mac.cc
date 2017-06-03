@@ -14,8 +14,8 @@
 
 namespace atom {
 
-NodeBindingsMac::NodeBindingsMac(bool is_browser)
-    : NodeBindings(is_browser) {
+NodeBindingsMac::NodeBindingsMac(BrowserEnvironment browser_env)
+    : NodeBindings(browser_env) {
 }
 
 NodeBindingsMac::~NodeBindingsMac() {
@@ -54,13 +54,14 @@ void NodeBindingsMac::PollEvents() {
   // Wait for new libuv events.
   int r;
   do {
-    r = select(fd + 1, &readset, NULL, NULL, timeout == -1 ? NULL : &tv);
+    r = select(fd + 1, &readset, nullptr, nullptr,
+               timeout == -1 ? nullptr : &tv);
   } while (r == -1 && errno == EINTR);
 }
 
 // static
-NodeBindings* NodeBindings::Create(bool is_browser) {
-  return new NodeBindingsMac(is_browser);
+NodeBindings* NodeBindings::Create(BrowserEnvironment browser_env) {
+  return new NodeBindingsMac(browser_env);
 }
 
 }  // namespace atom

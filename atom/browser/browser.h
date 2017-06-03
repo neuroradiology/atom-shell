@@ -8,12 +8,13 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
-#include "base/compiler_specific.h"
-#include "base/observer_list.h"
-#include "base/strings/string16.h"
 #include "atom/browser/browser_observer.h"
 #include "atom/browser/window_list_observer.h"
+#include "base/compiler_specific.h"
+#include "base/macros.h"
+#include "base/observer_list.h"
+#include "base/strings/string16.h"
+#include "base/values.h"
 #include "native_mate/arguments.h"
 
 #if defined(OS_WIN)
@@ -21,12 +22,7 @@
 #endif
 
 namespace base {
-class DictionaryValue;
 class FilePath;
-}
-
-namespace ui {
-class MenuModel;
 }
 
 namespace gfx {
@@ -35,6 +31,7 @@ class Image;
 
 namespace atom {
 
+class AtomMenuModel;
 class LoginHandler;
 
 // This class is used for control application-wide operations.
@@ -49,7 +46,7 @@ class Browser : public WindowListObserver {
   void Quit();
 
   // Exit the application immediately and set exit code.
-  void Exit(int code);
+  void Exit(mate::Arguments* args);
 
   // Cleanup everything and shutdown the application gracefully.
   void Shutdown();
@@ -63,7 +60,7 @@ class Browser : public WindowListObserver {
   // Overrides the application version.
   void SetVersion(const std::string& version);
 
-  // Returns the application's name, default is just Atom-Shell.
+  // Returns the application's name, default is just Electron.
   std::string GetName() const;
 
   // Overrides the application name.
@@ -79,13 +76,33 @@ class Browser : public WindowListObserver {
   void SetAppUserModelID(const base::string16& name);
 
   // Remove the default protocol handler registry key
-  bool RemoveAsDefaultProtocolClient(const std::string& protocol);
+  bool RemoveAsDefaultProtocolClient(const std::string& protocol,
+                                     mate::Arguments* args);
 
   // Set as default handler for a protocol.
-  bool SetAsDefaultProtocolClient(const std::string& protocol);
+  bool SetAsDefaultProtocolClient(const std::string& protocol,
+                                  mate::Arguments* args);
 
   // Query the current state of default handler for a protocol.
-  bool IsDefaultProtocolClient(const std::string& protocol);
+  bool IsDefaultProtocolClient(const std::string& protocol,
+                               mate::Arguments* args);
+
+  // Set/Get the badge count.
+  bool SetBadgeCount(int count);
+  int GetBadgeCount();
+
+  // Set/Get the login item settings of the app
+  struct LoginItemSettings {
+    bool open_at_login = false;
+    bool open_as_hidden = false;
+    bool restore_state = false;
+    bool opened_at_login = false;
+    bool opened_as_hidden = false;
+    base::string16 path;
+    std::vector<base::string16> args;
+  };
+  void SetLoginItemSettings(LoginItemSettings settings);
+  LoginItemSettings GetLoginItemSettings(const LoginItemSettings& options);
 
 #if defined(OS_MACOSX)
   // Hide the application.
@@ -124,12 +141,16 @@ class Browser : public WindowListObserver {
   // Hide/Show dock.
   void DockHide();
   void DockShow();
+  bool DockIsVisible();
 
   // Set docks' menu.
-  void DockSetMenu(ui::MenuModel* model);
+  void DockSetMenu(AtomMenuModel* model);
 
   // Set docks' icon.
   void DockSetIcon(const gfx::Image& image);
+
+  void ShowAboutPanel();
+  void SetAboutPanelOptions(const base::DictionaryValue& options);
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_WIN)
@@ -143,7 +164,7 @@ class Browser : public WindowListObserver {
   };
 
   // Add a custom task to jump list.
-  void SetUserTasks(const std::vector<UserTask>& tasks);
+  bool SetUserTasks(const std::vector<UserTask>& tasks);
 
   // Returns the application user model ID, if there isn't one, then create
   // one from app's name.
@@ -152,10 +173,8 @@ class Browser : public WindowListObserver {
 #endif  // defined(OS_WIN)
 
 #if defined(OS_LINUX)
-  // Set/Get unity dock's badge counter.
-  bool UnityLauncherAvailable();
-  void UnityLauncherSetBadgeCount(int count);
-  int UnityLauncherGetBadgeCount();
+  // Whether Unity launcher is running.
+  bool IsUnityRunning();
 #endif  // defined(OS_LINUX)
 
   // Tell the application to open a file.
@@ -170,7 +189,9 @@ class Browser : public WindowListObserver {
 
   // Tell the application the loading has been done.
   void WillFinishLaunching();
-  void DidFinishLaunching();
+  void DidFinishLaunching(const base::DictionaryValue& launch_info);
+
+  void OnAccessibilitySupportChanged();
 
   // Request basic auth login.
   void RequestLogin(LoginHandler* login_handler,
@@ -223,12 +244,14 @@ class Browser : public WindowListObserver {
   std::string version_override_;
   std::string name_override_;
 
-#if defined(OS_LINUX)
-  int current_badge_count_ = 0;
-#endif
+  int badge_count_ = 0;
 
 #if defined(OS_WIN)
   base::string16 app_user_model_id_;
+#endif
+
+#if defined(OS_MACOSX)
+  base::DictionaryValue about_panel_options_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(Browser);

@@ -1,25 +1,22 @@
 #!/usr/bin/env python
 
 import argparse
+import errno
 import os
+import re
 import subprocess
 import sys
 
-from lib.config import LIBCHROMIUMCONTENT_COMMIT, BASE_URL, PLATFORM, \
-                       enable_verbose_mode, is_verbose_mode, get_target_arch
-from lib.util import execute_stdout, get_electron_version, scoped_cwd
+from lib.config import BASE_URL, PLATFORM,  enable_verbose_mode, \
+                       is_verbose_mode, get_target_arch
+from lib.util import execute, execute_stdout, get_electron_version, \
+                     scoped_cwd, update_node_modules
 
 
 SOURCE_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 VENDOR_DIR = os.path.join(SOURCE_ROOT, 'vendor')
+DOWNLOAD_DIR = os.path.join(VENDOR_DIR, 'download')
 PYTHON_26_URL = 'https://chromium.googlesource.com/chromium/deps/python_26'
-
-if os.environ.has_key('CI'):
-  NPM = os.path.join(SOURCE_ROOT, 'node_modules', '.bin', 'npm')
-else:
-  NPM = 'npm'
-if sys.platform in ['win32', 'cygwin']:
-  NPM += '.cmd'
 
 
 def main():
@@ -43,8 +40,7 @@ def main():
   # Redirect to use local libchromiumcontent build.
   if args.build_libchromiumcontent:
     build_libchromiumcontent(args.verbose, args.target_arch, defines)
-    dist_dir = os.path.join(SOURCE_ROOT, 'vendor', 'brightray', 'vendor',
-                            'libchromiumcontent', 'dist', 'main')
+    dist_dir = os.path.join(VENDOR_DIR, 'libchromiumcontent', 'dist', 'main')
     libcc_source_path = os.path.join(dist_dir, 'src')
     libcc_shared_library_path = os.path.join(dist_dir, 'shared_library')
     libcc_static_library_path = os.path.join(dist_dir, 'static_library')
@@ -56,17 +52,16 @@ def main():
 
   setup_python_libs()
   update_node_modules('.')
-  bootstrap_brightray(args.dev, args.url, args.target_arch,
-                      libcc_source_path, libcc_shared_library_path,
-                      libcc_static_library_path)
+  setup_libchromiumcontent(args.dev, args.target_arch, args.url,
+                           libcc_source_path, libcc_shared_library_path,
+                           libcc_static_library_path)
 
   if PLATFORM == 'linux':
     download_sysroot(args.target_arch)
 
   create_chrome_version_h()
   touch_config_gypi()
-  run_update(defines, args.disable_clang, args.clang_dir)
-  update_electron_modules('spec', args.target_arch)
+  run_update(defines, args.msvs)
 
 
 def parse_args():
@@ -86,6 +81,8 @@ def parse_args():
                       action='store_true',
                       help='Run non-interactively by assuming "yes" to all ' \
                            'prompts.')
+  parser.add_argument('--msvs', action='store_true',
+                      help='Generate Visual Studio project')
   parser.add_argument('--target_arch', default=get_target_arch(),
                       help='Manually specify the arch to build for')
   parser.add_argument('--clang_dir', default='', help='Path to clang binaries')
@@ -101,11 +98,13 @@ def parse_args():
                       help='The shared library path of libchromiumcontent.')
   parser.add_argument('--libcc_static_library_path', required=False,
                       help='The static library path of libchromiumcontent.')
+  parser.add_argument('--defines', default='',
+                      help='The build variables passed to gyp')
   return parser.parse_args()
 
 
 def args_to_defines(args):
-  defines = ''
+  defines = args.defines
   if args.disable_clang:
     defines += ' clang=0'
   if args.clang_dir:
@@ -133,60 +132,28 @@ def setup_python_libs():
       execute_stdout([sys.executable, 'setup.py', 'build'])
 
 
-def bootstrap_brightray(is_dev, url, target_arch, libcc_source_path,
-                        libcc_shared_library_path,
-                        libcc_static_library_path):
-  bootstrap = os.path.join(VENDOR_DIR, 'brightray', 'script', 'bootstrap')
-  args = [
-    '--commit', LIBCHROMIUMCONTENT_COMMIT,
-    '--target_arch', target_arch,
-    url
-  ]
-  if is_dev:
-    args = ['--dev'] + args
+def setup_libchromiumcontent(is_dev, target_arch, url,
+                             libcc_source_path,
+                             libcc_shared_library_path,
+                             libcc_static_library_path):
+  target_dir = os.path.join(DOWNLOAD_DIR, 'libchromiumcontent')
+  download = os.path.join(VENDOR_DIR, 'libchromiumcontent', 'script',
+                          'download')
+  args = ['-f', '-c', get_libchromiumcontent_commit(), '--target_arch',
+          target_arch, url, target_dir]
   if (libcc_source_path != None and
       libcc_shared_library_path != None and
       libcc_static_library_path != None):
     args += ['--libcc_source_path', libcc_source_path,
-             '--libcc_shared_library_path', libcc_shared_library_path,
-             '--libcc_static_library_path', libcc_static_library_path]
-  execute_stdout([sys.executable, bootstrap] + args)
-
-
-def set_clang_env(env):
-  llvm_dir = os.path.join(SOURCE_ROOT, 'vendor', 'llvm-build',
-                          'Release+Asserts', 'bin')
-  env['CC']  = os.path.join(llvm_dir, 'clang')
-  env['CXX'] = os.path.join(llvm_dir, 'clang++')
-
-
-def update_node_modules(dirname, env=None):
-  if env is None:
-    env = os.environ.copy()
-  if PLATFORM == 'linux':
-    # Use prebuilt clang for building native modules.
-    set_clang_env(env)
-    env['npm_config_clang'] = '1'
-  with scoped_cwd(dirname):
-    args = [NPM, 'install']
-    if is_verbose_mode():
-      args += ['--verbose']
-    # Ignore npm install errors when running in CI.
-    if os.environ.has_key('CI'):
-      try:
-        execute_stdout(args, env)
-      except subprocess.CalledProcessError:
-        pass
-    else:
-      execute_stdout(args, env)
-
-
-def update_electron_modules(dirname, target_arch):
-  env = os.environ.copy()
-  env['npm_config_arch']    = target_arch
-  env['npm_config_target']  = get_electron_version()
-  env['npm_config_disturl'] = 'https://atom.io/download/atom-shell'
-  update_node_modules(dirname, env)
+            '--libcc_shared_library_path', libcc_shared_library_path,
+            '--libcc_static_library_path', libcc_static_library_path]
+    mkdir_p(target_dir)
+  else:
+    mkdir_p(DOWNLOAD_DIR)
+  if is_dev:
+    subprocess.check_call([sys.executable, download] + args)
+  else:
+    subprocess.check_call([sys.executable, download, '-s'] + args)
 
 
 def update_win32_python():
@@ -216,11 +183,11 @@ def download_sysroot(target_arch):
     target_arch = 'amd64'
   execute_stdout([sys.executable,
                   os.path.join(SOURCE_ROOT, 'script', 'install-sysroot.py'),
-                  '--arch', target_arch])
+                  '--arch', target_arch],
+                  cwd=VENDOR_DIR)
 
 def create_chrome_version_h():
-  version_file = os.path.join(SOURCE_ROOT, 'vendor', 'brightray', 'vendor',
-                              'libchromiumcontent', 'VERSION')
+  version_file = os.path.join(VENDOR_DIR, 'libchromiumcontent', 'VERSION')
   target_file = os.path.join(SOURCE_ROOT, 'atom', 'common', 'chrome_version.h')
   template_file = os.path.join(SOURCE_ROOT, 'script', 'chrome_version.h.in')
 
@@ -249,14 +216,33 @@ def touch_config_gypi():
       f.write(content)
 
 
-def run_update(defines, disable_clang, clang_dir):
-  env = os.environ.copy()
-  if not disable_clang and clang_dir == '':
-    # Build with prebuilt clang.
-    set_clang_env(env)
+def run_update(defines, msvs):
+  args = [sys.executable, os.path.join(SOURCE_ROOT, 'script', 'update.py')]
+  if defines:
+    args += ['--defines', defines]
+  if msvs:
+    args += ['--msvs']
 
-  update = os.path.join(SOURCE_ROOT, 'script', 'update.py')
-  execute_stdout([sys.executable, update, '--defines', defines], env)
+  execute_stdout(args)
+
+
+def get_libchromiumcontent_commit():
+  commit = os.getenv('LIBCHROMIUMCONTENT_COMMIT')
+  if commit:
+    return commit
+
+  # Extract full SHA-1 of libcc submodule commit
+  output = execute(['git', 'submodule', 'status', 'vendor/libchromiumcontent'])
+  commit = re.split('^(?:\s*)([a-f0-9]{40})(?:\s+)', output)[1]
+  return commit
+
+
+def mkdir_p(path):
+  try:
+    os.makedirs(path)
+  except OSError as e:
+    if e.errno != errno.EEXIST:
+      raise
 
 
 if __name__ == '__main__':

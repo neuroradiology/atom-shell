@@ -2,22 +2,27 @@
 
 > Monitor power state changes.
 
-You can only use it in the main process. You should not use this module until the `ready`
-event of the `app` module is emitted.
+Process: [Main](../glossary.md#main-process)
+
+You cannot require or use this module until the `ready` event of the `app`
+module is emitted.
 
 For example:
 
 ```javascript
+const electron = require('electron')
+const {app} = electron
+
 app.on('ready', () => {
-  require('electron').powerMonitor.on('suspend', () => {
-    console.log('The system is going to sleep');
-  });
-});
+  electron.powerMonitor.on('suspend', () => {
+    console.log('The system is going to sleep')
+  })
+})
 ```
 
 ## Events
 
-The `power-monitor` module emits the following events:
+The `powerMonitor` module emits the following events:
 
 ### Event: 'suspend'
 

@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_MEDIA_NATIVE_DESKTOP_MEDIA_LIST_H_
 #define CHROME_BROWSER_MEDIA_NATIVE_DESKTOP_MEDIA_LIST_H_
 
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner.h"
 #include "chrome/browser/media/desktop_media_list.h"
@@ -13,8 +12,7 @@
 #include "ui/gfx/image/image_skia.h"
 
 namespace webrtc {
-class ScreenCapturer;
-class WindowCapturer;
+class DesktopCapturer;
 }
 
 // Implementation of DesktopMediaList that shows native screens and
@@ -25,8 +23,8 @@ class NativeDesktopMediaList : public DesktopMediaList {
   // types of sources the model should be populated with (e.g. it will only
   // contain windows, if |screen_capturer| is NULL).
   NativeDesktopMediaList(
-      std::unique_ptr<webrtc::ScreenCapturer> screen_capturer,
-      std::unique_ptr<webrtc::WindowCapturer> window_capturer);
+      std::unique_ptr<webrtc::DesktopCapturer> screen_capturer,
+      std::unique_ptr<webrtc::DesktopCapturer> window_capturer);
   ~NativeDesktopMediaList() override;
 
   // DesktopMediaList interface.
@@ -66,8 +64,8 @@ class NativeDesktopMediaList : public DesktopMediaList {
   void OnRefreshFinished();
 
   // Capturers specified in SetCapturers() and passed to the |worker_| later.
-  std::unique_ptr<webrtc::ScreenCapturer> screen_capturer_;
-  std::unique_ptr<webrtc::WindowCapturer> window_capturer_;
+  std::unique_ptr<webrtc::DesktopCapturer> screen_capturer_;
+  std::unique_ptr<webrtc::DesktopCapturer> window_capturer_;
 
   // Time interval between mode updates.
   base::TimeDelta update_period_;

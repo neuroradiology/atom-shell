@@ -10,9 +10,9 @@
 #include "atom/common/asar/scoped_temporary_file.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
+#include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/pickle.h"
-#include "base/json/json_reader.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 
@@ -41,7 +41,7 @@ bool GetFilesNode(const base::DictionaryValue* root,
   // Test for symbol linked directory.
   std::string link;
   if (dir->GetStringWithoutPathExpansion("link", &link)) {
-    const base::DictionaryValue* linked_node = NULL;
+    const base::DictionaryValue* linked_node = nullptr;
     if (!GetNodeFromPath(link, root, &linked_node))
       return false;
     dir = linked_node;
@@ -60,7 +60,7 @@ bool GetChildNode(const base::DictionaryValue* root,
     return true;
   }
 
-  const base::DictionaryValue* files = NULL;
+  const base::DictionaryValue* files = nullptr;
   return GetFilesNode(root, dir, &files) &&
          files->GetDictionaryWithoutPathExpansion(name, out);
 }
@@ -78,7 +78,7 @@ bool GetNodeFromPath(std::string path,
   for (size_t delimiter_position = path.find_first_of(kSeparators);
        delimiter_position != std::string::npos;
        delimiter_position = path.find_first_of(kSeparators)) {
-    const base::DictionaryValue* child = NULL;
+    const base::DictionaryValue* child = nullptr;
     if (!GetChildNode(root, path.substr(0, delimiter_position), dir, &child))
       return false;
 
@@ -181,7 +181,7 @@ bool Archive::Init() {
   std::string error;
   base::JSONReader reader;
   std::unique_ptr<base::Value> value(reader.ReadToValue(header));
-  if (!value || !value->IsType(base::Value::TYPE_DICTIONARY)) {
+  if (!value || !value->IsType(base::Value::Type::DICTIONARY)) {
     LOG(ERROR) << "Failed to parse header: " << error;
     return false;
   }
@@ -269,8 +269,9 @@ bool Archive::Realpath(const base::FilePath& path, base::FilePath* realpath) {
 }
 
 bool Archive::CopyFileOut(const base::FilePath& path, base::FilePath* out) {
-  if (external_files_.contains(path)) {
-    *out = external_files_.get(path)->path();
+  auto it = external_files_.find(path.value());
+  if (it != external_files_.end()) {
+    *out = it->second->path();
     return true;
   }
 
@@ -296,7 +297,7 @@ bool Archive::CopyFileOut(const base::FilePath& path, base::FilePath* out) {
 #endif
 
   *out = temp_file->path();
-  external_files_.set(path, std::move(temp_file));
+  external_files_[path.value()] = std::move(temp_file);
   return true;
 }
 

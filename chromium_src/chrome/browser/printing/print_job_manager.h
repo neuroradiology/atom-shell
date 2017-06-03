@@ -5,12 +5,13 @@
 #ifndef CHROME_BROWSER_PRINTING_PRINT_JOB_MANAGER_H_
 #define CHROME_BROWSER_PRINTING_PRINT_JOB_MANAGER_H_
 
+#include <memory>
 #include <set>
 #include <vector>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/public/browser/notification_observer.h"
@@ -37,7 +38,7 @@ class PrintQueriesQueue : public base::RefCountedThreadSafe<PrintQueriesQueue> {
 
   // Creates new query.
   scoped_refptr<PrinterQuery> CreatePrinterQuery(int render_process_id,
-                                                 int render_view_id);
+                                                 int render_frame_id);
 
   void Shutdown();
 
@@ -58,15 +59,15 @@ class PrintQueriesQueue : public base::RefCountedThreadSafe<PrintQueriesQueue> {
 class PrintJobManager : public content::NotificationObserver {
  public:
   PrintJobManager();
-  virtual ~PrintJobManager();
+  ~PrintJobManager() override;
 
   // On browser quit, we should wait to have the print job finished.
   void Shutdown();
 
   // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) override;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Returns queries queue. Never returns NULL. Must be called on Browser UI
   // Thread. Reference could be stored and used from any thread.

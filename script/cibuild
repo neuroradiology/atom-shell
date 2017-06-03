@@ -35,6 +35,13 @@ def main():
   if os.environ.has_key('JANKY_SHA1'):
     setup_nodenv()
 
+  # Ignore the CXX and CC env in CI.
+  try:
+    del os.environ['CC']
+    del os.environ['CXX']
+  except KeyError:
+    pass
+
   target_arch = 'x64'
   if os.environ.has_key('TARGET_ARCH'):
     target_arch = os.environ['TARGET_ARCH']
@@ -58,6 +65,11 @@ def main():
   execute([npm, 'install', 'npm@2.12.1'])
 
   log_versions()
+  # Add "./node_modules/.bin" to the beginning of $PATH, which will ensure
+  # future "npm" invocations use the right version.
+  node_bin_dir = os.path.join(SOURCE_ROOT, 'node_modules', '.bin')
+  os.environ['PATH'] = os.path.pathsep.join([node_bin_dir,
+                                             os.environ.get('PATH', '')])
 
   is_release = os.environ.has_key('ELECTRON_RELEASE')
   args = ['--target_arch=' + target_arch]
@@ -69,17 +81,16 @@ def main():
     sys.stderr.write('\nRunning `npm run lint`\n')
     sys.stderr.flush()
     execute([npm, 'run', 'lint'])
-    run_script('pylint.py')
+
   if is_release:
     run_script('build.py', ['-c', 'R'])
     run_script('create-dist.py')
     run_script('upload.py')
   else:
-    if PLATFORM == 'win32':
-      os.environ['OUTPUT_TO_FILE'] = 'output.log'
     run_script('build.py', ['-c', 'D'])
     if PLATFORM == 'win32' or target_arch == 'x64':
-      run_script('test.py', ['--ci'])
+      run_script('test.py', ['--ci', '--rebuild_native_modules'])
+      run_script('verify-ffmpeg.py')
 
 
 def run_script(script, args=[]):
@@ -102,9 +113,12 @@ def log_versions():
 
 def setup_nodenv():
   if os.path.isdir('/usr/local/share/nodenv'):
-    os.environ['NODENV_ROOT'] = '/usr/local/share/nodenv'
-    os.environ['PATH'] = '/usr/local/share/nodenv/bin:/usr/local/share/nodenv/shims:' + os.environ['PATH']
-    os.environ['NODENV_VERSION'] = 'v0.10.21'
+    nodenv_root = os.path.join(os.environ['HOME'], '.nodenv')
+    os.environ['NODENV_ROOT'] = nodenv_root
+    os.environ['PATH'] = nodenv_root + '/bin:' + nodenv_root + '/shims:' + os.environ['PATH']
+    os.environ['NODENV_VERSION'] = 'v4.5.0'
+    subprocess.check_call(['/usr/local/share/nodenv/bin/nodenv', 'install', os.environ['NODENV_VERSION']])
+    subprocess.check_call(['/usr/local/share/nodenv/bin/nodenv', 'rehash'])
 
 
 if __name__ == '__main__':

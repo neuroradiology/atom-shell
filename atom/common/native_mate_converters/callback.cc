@@ -4,8 +4,6 @@
 
 #include "atom/common/native_mate_converters/callback.h"
 
-#include "content/public/browser/browser_thread.h"
-
 using content::BrowserThread;
 
 namespace mate {
@@ -123,7 +121,7 @@ v8::Local<v8::Value> CreateFunctionFromTranslater(
 
   v8::Local<v8::FunctionTemplate> call_translater =
       v8::Local<v8::FunctionTemplate>::New(isolate, g_call_translater);
-  TranslaterHolder* holder = new TranslaterHolder;
+  auto* holder = new TranslaterHolder;
   holder->translater = translater;
   return BindFunctionWith(isolate,
                           isolate->GetCurrentContext(),

@@ -28,8 +28,7 @@ Platform에서 제공되는 수많은 API를 사용할 수 있다는 이야기�
 현재 존재하는 Electron 애플리케이션을 컴파일 하려면, 다음 요구 사항을 충족해야 합니다:
 
 
-* Windows 10 기념일 업데이트 (이 업데이트가 정식 배포되기 전까지 개발자는 Windows
-  Insider Preview를 사용할 수 있습니다)
+* Windows 10 기념일 업데이트 (2016년 8월 2일 발매)
 * Windows 10 SDK, [여기서 다운로드][windows-sdk]
 
 그리고 CLI에서 `electron-windows-store`를 설치합니다:
@@ -61,19 +60,14 @@ npm install -g electron-windows-store
 │   ├── am.pak
 │   ├── ar.pak
 │   ├── [...]
-├── msvcp120.dll
-├── msvcr120.dll
 ├── natives_blob.bin
 ├── node.dll
-├── pdf.dll
 ├── resources
 │   ├── app
 │   └── atom.asar
 ├── snapshot_blob.bin
 ├── squirrel.exe
-├── ui_resources_200_percent.pak
-├── vccorlib120.dll
-└── xinput1_3.dll
+└── ui_resources_200_percent.pak
 ```
 
 ## `electron-windows-store` 실행하기
@@ -104,10 +98,16 @@ Windows Application Manifest (`AppXManifest.xml`)와 동시에 가상 파일 시
 
 ## Step 3: AppX 패키지 사용하기
 
-Windows 기념일 업데이트 (코드네임 Windows 레드스톤)가 아직 모든 일반 사용자에게
-배포되지 않았기 때문에, 올해까지는 애플리케이션을 Windows Store에 올릴 수 없을 것
-입니다 - 하지만 개발자 또는 회사 환경에서 `Add-AppxPackage`
-[PowerShell Cmdlet을 통해][add-appxpackage] 기기에 애플리케이션을 설치할 수 있습니다.
+일반 사용자들이 패키지를 실행하기 위해서는 "기념일 업데이트" 된 Windows 10 이
+필요합니다. - Windows 업데이트 하는 방법은 [여기][how-to-update]에서 찾을 수
+있습니다.
+
+기존 UWP 앱과 반대로, 패키지된 앱은 현재 수동 확인 절차가 필요합니다. 이것은
+[여기][centennial-campaigns]에서 적용할 수 있습니다. 반면에, 사용자는
+더블클릭으로 패키지를 설치할 수 있습니다. 더 쉬운 설치 방법을 찾고 있다면,
+스토어에 제출하지 않아도 됩니다. (일반적으로 기업과 같은) 관리되는 환경에서는,
+`Add-AppxPackage` [PowerShell Cmdlet 은 자동화된 방식으로 설치하는데 사용될 수
+있습니다][add-appxpackage].
 
 또 다른 중요한 제약은 컴파일된 AppX 패키지는 여전히 win32 실행 파일이 담겨있다는
 것입니다 - 따라서 Xbox, HoloLens, Phone에서 실행할 수 없습니다.
@@ -151,3 +151,5 @@ Container에서 설치하고 실행할 것입니다.
 [electron-packager]: https://github.com/electron-userland/electron-packager
 [electron-windows-store]: https://github.com/catalystcode/electron-windows-store
 [background-task]: https://github.com/felixrieseberg/electron-uwp-background
+[centennial-campaigns]: https://developer.microsoft.com/en-us/windows/projects/campaigns/desktop-bridge
+[how-to-update]: https://blogs.windows.com/windowsexperience/2016/08/02/how-to-get-the-windows-10-anniversary-update

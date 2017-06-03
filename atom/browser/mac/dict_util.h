@@ -5,9 +5,9 @@
 #ifndef ATOM_BROWSER_MAC_DICT_UTIL_H_
 #define ATOM_BROWSER_MAC_DICT_UTIL_H_
 
-#import <Foundation/Foundation.h>
+#include <memory>
 
-#include "base/memory/scoped_ptr.h"
+#import <Foundation/Foundation.h>
 
 namespace base {
 class ListValue;
@@ -16,12 +16,14 @@ class DictionaryValue;
 
 namespace atom {
 
+NSArray* ListValueToNSArray(const base::ListValue& value);
+
+std::unique_ptr<base::ListValue> NSArrayToListValue(NSArray* arr);
+
 NSDictionary* DictionaryValueToNSDictionary(const base::DictionaryValue& value);
 
 std::unique_ptr<base::DictionaryValue> NSDictionaryToDictionaryValue(
     NSDictionary* dict);
-
-std::unique_ptr<base::ListValue> NSArrayToListValue(NSArray* arr);
 
 }  // namespace atom
 
