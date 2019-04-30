@@ -7,6 +7,7 @@
 
 #include <array>
 #include <string>
+
 #include "atom/browser/api/event_emitter.h"
 #include "atom/browser/api/trackable_object.h"
 #include "base/memory/weak_ptr.h"
@@ -104,13 +105,13 @@ class URLRequest : public mate::EventEmitter<URLRequest> {
       const std::string& method,
       const GURL& url,
       scoped_refptr<net::HttpResponseHeaders> response_headers);
-  void OnAuthenticationRequired(
-      scoped_refptr<const net::AuthChallengeInfo> auth_info);
+  void OnAuthenticationRequired(const net::AuthChallengeInfo& auth_info);
   void OnResponseStarted(
       scoped_refptr<net::HttpResponseHeaders> response_headers);
   void OnResponseData(scoped_refptr<const net::IOBufferWithSize> data);
   void OnResponseCompleted();
   void OnError(const std::string& error, bool isRequestError);
+  mate::Dictionary GetUploadProgress(v8::Isolate* isolate);
 
  protected:
   explicit URLRequest(v8::Isolate* isolate, v8::Local<v8::Object> wrapper);

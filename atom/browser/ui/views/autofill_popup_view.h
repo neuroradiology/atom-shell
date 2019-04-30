@@ -5,17 +5,23 @@
 #ifndef ATOM_BROWSER_UI_VIEWS_AUTOFILL_POPUP_VIEW_H_
 #define ATOM_BROWSER_UI_VIEWS_AUTOFILL_POPUP_VIEW_H_
 
+#include <memory>
+
 #include "atom/browser/ui/autofill_popup.h"
 
-#include "atom/browser/osr/osr_view_proxy.h"
 #include "base/optional.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_widget_host.h"
+#include "electron/buildflags/buildflags.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/views/drag_controller.h"
 #include "ui/views/focus/widget_focus_manager.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_observer.h"
+
+#if BUILDFLAG(ENABLE_OSR)
+#include "atom/browser/osr/osr_view_proxy.h"
+#endif
 
 namespace atom {
 
@@ -40,10 +46,7 @@ class AutofillPopupChildView : public views::View {
   ~AutofillPopupChildView() override {}
 
   // views::Views implementation
-  void GetAccessibleNodeData(ui::AXNodeData* node_data) override {
-    node_data->role = ui::AX_ROLE_MENU_ITEM;
-    node_data->SetName(suggestion_);
-  }
+  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
 
   base::string16 suggestion_;
 
@@ -66,15 +69,13 @@ class AutofillPopupView : public views::WidgetDelegateView,
 
   int GetSelectedLine() { return selected_line_.value_or(-1); }
 
-  void WriteDragDataForView(
-    views::View*, const gfx::Point&, ui::OSExchangeData*) override {}
-  int GetDragOperationsForView(views::View*, const gfx::Point&) override {
-    return ui::DragDropTypes::DRAG_NONE;
-  }
-  bool CanStartDragForView(
-    views::View*, const gfx::Point&, const gfx::Point&) override {
-    return false;
-  }
+  void WriteDragDataForView(views::View*,
+                            const gfx::Point&,
+                            ui::OSExchangeData*) override;
+  int GetDragOperationsForView(views::View*, const gfx::Point&) override;
+  bool CanStartDragForView(views::View*,
+                           const gfx::Point&,
+                           const gfx::Point&) override;
 
  private:
   friend class AutofillPopup;
@@ -138,7 +139,9 @@ class AutofillPopupView : public views::WidgetDelegateView,
   // The index of the currently selected line
   base::Optional<int> selected_line_;
 
+#if BUILDFLAG(ENABLE_OSR)
   std::unique_ptr<OffscreenViewProxy> view_proxy_;
+#endif
 
   // The registered keypress callback, responsible for switching lines on
   // key presses
